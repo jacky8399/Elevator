@@ -1,0 +1,12 @@
+name: Elevator
+version: '${version}'
+main: com.jacky8399.elevator.Elevator
+api-version: '1.20'
+commands:
+  elevator:
+    usage: /elevator <...>
+    permission: elevator.*
+
+permissions:
+  elevator.*:
+    default: op
