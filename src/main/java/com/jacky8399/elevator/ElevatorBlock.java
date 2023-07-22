@@ -1,13 +1,11 @@
 package com.jacky8399.elevator;
 
 import org.bukkit.Location;
+import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
-import org.bukkit.entity.ArmorStand;
-import org.bukkit.entity.BlockDisplay;
-import org.bukkit.entity.Player;
-import org.bukkit.entity.Shulker;
+import org.bukkit.entity.*;
 import org.bukkit.util.Transformation;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Quaternionf;
@@ -15,7 +13,7 @@ import org.joml.Vector3f;
 
 import java.util.Collection;
 
-public record ElevatorBlock(ArmorStand stand, @Nullable BlockDisplay display, @Nullable Shulker collision) {
+public record ElevatorBlock(Entity stand, @Nullable BlockDisplay display, @Nullable Shulker collision) {
     private static final Transformation DISPLAY_TRANSFORMATION =
             new Transformation(new Vector3f(-0.5f, 0, -0.5f), new Quaternionf(), new Vector3f(1, 1, 1), new Quaternionf());
 
@@ -23,7 +21,7 @@ public record ElevatorBlock(ArmorStand stand, @Nullable BlockDisplay display, @N
         BlockData data = block.getBlockData();
 
         Location location = block.getLocation().add(0.5, 0, 0.5);
-        ArmorStand base = spawnBase(world, location);
+        Entity base = spawnBase(world, location);
 
         BlockDisplay display = world.spawn(location, BlockDisplay.class, e -> {
             e.setBlock(data);
@@ -49,7 +47,7 @@ public record ElevatorBlock(ArmorStand stand, @Nullable BlockDisplay display, @N
     }
 
     public static ElevatorBlock spawnBorder(World world, Location location) {
-        ArmorStand base = spawnBase(world, location);
+        Entity base = spawnBase(world, location);
         Shulker shulker = world.spawn(location, Shulker.class, e -> {
             e.setAI(false);
             e.setInvisible(true);
@@ -69,10 +67,12 @@ public record ElevatorBlock(ArmorStand stand, @Nullable BlockDisplay display, @N
         stand.remove();
     }
 
-    private static ArmorStand spawnBase(World world, Location location) {
+    private static Entity spawnBase(World world, Location location) {
         return world.spawn(location, ArmorStand.class, stand -> {
             stand.setMarker(true);
+            stand.setInvulnerable(true);
             stand.setInvisible(true);
+            stand.setCanTick(true);
         });
     }
 }

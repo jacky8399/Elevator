@@ -20,6 +20,18 @@ public class CommandElevator implements TabExecutor {
             case "givecontroller" -> {
                 player.getInventory().addItem(ItemUtils.getControllerItem());
             }
+            case "up" -> {
+                ElevatorController controller = ElevatorManager.elevators.values().iterator().next();
+                controller.moveUp();
+            }
+            case "down" -> {
+                ElevatorController controller = ElevatorManager.elevators.values().iterator().next();
+                controller.moveDown();
+            }
+            case "scan" -> {
+                ElevatorController controller = ElevatorManager.elevators.values().iterator().next();
+                controller.scanFloors();
+            }
         }
 
         return true;

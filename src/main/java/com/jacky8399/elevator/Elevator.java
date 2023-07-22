@@ -1,11 +1,12 @@
 package com.jacky8399.elevator;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
+import org.bukkit.World;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.util.BlockVector;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.logging.Logger;
 
 public final class Elevator extends JavaPlugin {
@@ -14,7 +15,6 @@ public final class Elevator extends JavaPlugin {
 
     public static Logger LOGGER;
 
-    public static final Map<BlockVector, ElevatorController> elevators = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -24,13 +24,30 @@ public final class Elevator extends JavaPlugin {
         getCommand("elevator").setExecutor(new CommandElevator());
 
         Bukkit.getPluginManager().registerEvents(new Events(), this);
+
+        Bukkit.getScheduler().runTaskTimer(this, this::tick, 0, 1);
+
+        // load all elevators
+        for (World world : Bukkit.getWorlds()) {
+            for (Chunk chunk : world.getLoadedChunks()) {
+                Events.loadChunkElevators(chunk);
+            }
+        }
     }
 
     @Override
     public void onDisable() {
-        for (ElevatorController controller : elevators.values()) {
+        for (ElevatorController controller : ElevatorManager.elevators.values()) {
             controller.immobilize();
+            controller.save();
         }
-        elevators.clear();
+        ElevatorManager.elevators.clear();
+        ElevatorManager.playerElevatorCache.clear();
+    }
+
+    public void tick() {
+        for (ElevatorController controller : ElevatorManager.elevators.values()) {
+            controller.tick();
+        }
     }
 }

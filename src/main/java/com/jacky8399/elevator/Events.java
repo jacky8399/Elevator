@@ -1,9 +1,12 @@
 package com.jacky8399.elevator;
 
+import com.jacky8399.elevator.utils.BlockUtils;
 import com.jacky8399.elevator.utils.ItemUtils;
+import org.bukkit.Chunk;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.BlockState;
 import org.bukkit.block.TileState;
 import org.bukkit.block.data.Directional;
 import org.bukkit.event.EventHandler;
@@ -12,6 +15,10 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerSwapHandItemsEvent;
+import org.bukkit.event.world.ChunkLoadEvent;
+import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.util.BlockVector;
 import org.bukkit.util.BoundingBox;
 
@@ -24,14 +31,13 @@ public class Events implements Listener {
             return;
         Block block = e.getBlock();
         block.setBlockData(Material.DROPPER.createBlockData(data -> ((Directional) data).setFacing(BlockFace.DOWN)));
-        TileState state = (TileState) block.getState();
 
-
-        ElevatorController controller = new ElevatorController(block.getWorld(), block.getLocation(), BoundingBox.of(
+        ElevatorController controller = new ElevatorController(block.getWorld(), block, BoundingBox.of(
                 block.getRelative(-1, -4, -1),
                 block.getRelative(1, -1, 1)
         ));
-        Elevator.elevators.put(new BlockVector(block.getX(), block.getY(), block.getZ()), controller);
+        controller.save();
+        ElevatorManager.elevators.put(new BlockVector(block.getX(), block.getY(), block.getZ()), controller);
 
         controller.showOutline(List.of(e.getPlayer()));
 
@@ -42,7 +48,7 @@ public class Events implements Listener {
         if (e.getAction() != Action.RIGHT_CLICK_BLOCK)
             return;
         Block block = e.getClickedBlock();
-        ElevatorController controller = Elevator.elevators.get(new BlockVector(block.getX(), block.getY(), block.getZ()));
+        ElevatorController controller = ElevatorManager.elevators.get(new BlockVector(block.getX(), block.getY(), block.getZ()));
         if (controller == null)
             return;
         e.setCancelled(true);
@@ -54,6 +60,38 @@ public class Events implements Listener {
             controller.immobilize();
         else
             controller.mobilize();
+    }
+
+    @EventHandler
+    public void onChunkLoad(ChunkLoadEvent e) {
+        loadChunkElevators(e.getChunk());
+    }
+
+    static void loadChunkElevators(Chunk chunk) {
+        for (BlockState state : chunk.getTileEntities()) {
+            Block block = state.getBlock();
+            ElevatorController controller = ElevatorController.load(block, (TileState) state);
+            if (controller != null)
+                ElevatorManager.elevators.put(BlockUtils.toVector(block), controller);
+        }
+    }
+
+    @EventHandler
+    public void onChunkUnload(ChunkUnloadEvent e) {
+        Chunk chunk = e.getChunk();
+        for (BlockState state : chunk.getTileEntities()) {
+            Block block = state.getBlock();
+            ElevatorController controller = ElevatorManager.elevators.remove(BlockUtils.toVector(block));
+            if (controller != null) {
+                controller.save();
+                ElevatorManager.removeElevator(controller);
+            }
+        }
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent e) {
+        ElevatorManager.playerElevatorCache.remove(e.getPlayer());
     }
 
 }
