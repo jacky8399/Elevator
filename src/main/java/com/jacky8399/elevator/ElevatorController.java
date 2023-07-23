@@ -3,15 +3,17 @@ package com.jacky8399.elevator;
 import com.jacky8399.elevator.utils.BlockUtils;
 import com.jacky8399.elevator.utils.PaperUtils;
 import com.jacky8399.elevator.utils.PlayerUtils;
-import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.Sign;
 import org.bukkit.block.TileState;
+import org.bukkit.block.data.Bisected;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.type.Door;
 import org.bukkit.block.data.type.NoteBlock;
 import org.bukkit.block.data.type.Observer;
+import org.bukkit.block.data.type.TrapDoor;
 import org.bukkit.block.sign.Side;
 import org.bukkit.entity.*;
 import org.bukkit.inventory.ItemStack;
@@ -43,7 +45,7 @@ public class ElevatorController {
     List<ElevatorBlock> movingBlocks;
 
     // cabin entities and their offset relative to the cabin
-    Map<LivingEntity, Vector> cabinEntities;
+    Map<LivingEntity, Double> cabinEntities;
 
     List<ElevatorFloor> floors = new ArrayList<>();
     int currentFloorIdx = 1;
@@ -54,16 +56,25 @@ public class ElevatorController {
     long movementEndTick;
     int movementTime;
 
+    Set<Block> managedDoors = new HashSet<>();
+
     public ElevatorController(@NotNull World world, @NotNull Block controller, @NotNull BoundingBox cabin) {
         this.world = world;
         this.controller = controller;
         this.cabin = cabin.clone();
     }
 
+    // constructor for deserialization
+    private ElevatorController(@NotNull BoundingBox cabin) {
+        this.cabin = cabin.clone();
+    }
+
     public void mobilize() {
         if (moving)
             return;
-//        Elevator.LOGGER.info("Mobilizing");
+//        debug("Mobilizing");
+
+        setNearbyDoors(false);
 
         int minX = (int) cabin.getMinX();
         int minY = (int) cabin.getMinY();
@@ -73,19 +84,32 @@ public class ElevatorController {
         int maxZ = (int) cabin.getMaxZ();
 
         // scan cabin entities
-        var entities = world.getNearbyEntities(cabin, e -> e instanceof LivingEntity);
+        var entities = scanCabinEntities();
         this.cabinEntities = new HashMap<>();
         Location temp = controller.getLocation();
         for (var entity : entities) {
-            Vector relative = entity.getLocation(temp).subtract(minX, minY, minZ).toVector();
-            this.cabinEntities.put((LivingEntity) entity, relative);
+            entity.getLocation(temp);
+            // try to move players to the ground
+            if (entity instanceof Player) {
+                var rayTrace = world.rayTraceBlocks(temp, new Vector(0, -1, 0), 2, FluidCollisionMode.ALWAYS, true);
+                if (rayTrace != null) {
+                    temp.setY(rayTrace.getHitPosition().getY());
+                    PaperUtils.teleport(entity, temp);
+                }
+            }
+
+            double deltaY = temp.getY() - cabin.getMinY();
+            this.cabinEntities.put((LivingEntity) entity, deltaY);
         }
 
         int length = maxX - minX;
         int width = maxZ - minZ;
         int height = maxY - minY;
 
-        movingBlocks = new ArrayList<>(length * width * height + 2 * length * width);
+        int noOfBlocks = length * width * height + 2 * length * width;
+        movingBlocks = new ArrayList<>(noOfBlocks);
+        var toBreak = new ArrayList<Block>();
+        var toBreakNonSolid = new ArrayList<Block>();
         for (int j = minY; j < maxY; j++) {
             boolean isFloor = j == minY;
             boolean isCeiling = j == maxY - 1;
@@ -93,36 +117,67 @@ public class ElevatorController {
                 for (int k = minZ; k < maxZ; k++) {
                     Block block = world.getBlockAt(i, j, k);
                     Material type = block.getType();
-                    if (type == Material.AIR || Tag.WITHER_IMMUNE.isTagged(type))
+                    if (block.equals(controller) || type == Material.AIR || block.getState() instanceof TileState)
                         continue;
 
                     movingBlocks.add(ElevatorBlock.spawnFor(world, block));
 
-                    // special treatment for floors and ceilings
-                    if ((isFloor || isCeiling) && !type.isOccluding()) {
-                        Location location = block.getLocation();
-                        if (isFloor)
-                            location.add(0.5, BlockUtils.getHighestPoint(block) - 1, 0.5);
-                        else
-                            location.add(0.5, BlockUtils.getLowestPoint(block), 0.5);
-                        if (Config.debug)
-                            Elevator.LOGGER.info("Block at %d,%d,%d is %s, new height: %f".formatted(i, j, k, type, location.getY()));
-                        movingBlocks.add(ElevatorBlock.spawnBorder(world, location));
+                    if (false) {
+                        // special treatment for floors and ceilings
+                        if ((isFloor || isCeiling) && !type.isOccluding()) {
+                            Location location = block.getLocation();
+                            if (isFloor)
+                                location.add(0.5, BlockUtils.getHighestPoint(block) - 1, 0.5);
+                            else
+                                location.add(0.5, BlockUtils.getLowestPoint(block), 0.5);
+                            movingBlocks.add(ElevatorBlock.spawnBorder(world, location));
+                        }
                     }
 
-                    block.setType(Material.AIR, false);
+                    if (type.isOccluding())
+                        toBreak.add(block);
+                    else
+                        toBreakNonSolid.add(block);
                 }
             }
         }
+        for (Block block : toBreakNonSolid) {
+            block.setType(Material.AIR, false);
+        }
+        for (Block block : toBreak) {
+            block.setType(Material.AIR);
+        }
+
         moving = true;
+    }
+
+//    private static final Vector BOUNDING_BOX_EPSILON = new Vector(0.05, 0.05, 0.05);
+    private Collection<Entity> scanCabinEntities() {
+        return world.getNearbyEntities(cabin, e -> {
+            if (!(e instanceof LivingEntity))
+                return false;
+            // shrink entity hitbox for leniency
+            BoundingBox box = e.getBoundingBox().expand(-0.05, -0.05, -0.05);
+            // ensure that the full bounding box is inside the cabin
+            return cabin.contains(box.getMin()) && cabin.contains(box.getMax());
+        });
+    }
+
+    private Collection<Player> scanCabinPlayers() {
+        // noinspection unchecked,rawtypes
+        return (Collection) world.getNearbyEntities(cabin, e -> {
+            if (!(e instanceof Player))
+                return false;
+            // shrink entity hitbox for leniency
+            BoundingBox box = e.getBoundingBox().expand(-0.05, -0.05, -0.05);
+            // ensure that the full bounding box is inside the cabin
+            return cabin.contains(box.getMin()) && cabin.contains(box.getMax());
+        });
     }
 
     public void immobilize() {
         if (!moving)
             return;
-
-        if (Config.debug)
-            Elevator.LOGGER.info("Immobilizing");
 
         Location location = controller.getLocation();
         for (ElevatorBlock block : movingBlocks) {
@@ -144,37 +199,80 @@ public class ElevatorController {
         // round cabin
         cabin.resize(Math.round(cabin.getMinX()), Math.round(cabin.getMinY()), Math.round(cabin.getMinZ()),
                 Math.round(cabin.getMaxX()), Math.round(cabin.getMaxY()), Math.round(cabin.getMaxZ()));
+        if (Config.debug)
+            debug("New cabin location: " + cabin);
 
-        Vector cabinMin = cabin.getMin();
+        double cabinMinY = cabin.getMinY();
 
         Location temp = controller.getLocation();
         for (var entry : cabinEntities.entrySet()) {
             LivingEntity entity = entry.getKey();
-            Vector offset = entry.getValue();
+            double offset = entry.getValue();
 
             entity.setGravity(true);
             entity.setFallDistance(0);
             if (entity instanceof Player player) {
                 PlayerUtils.unsetAllowFlight(player);
             }
-            if (velocity.getY() > 0) {
-                entity.getLocation(temp).setY(cabinMin.getY() + offset.getY());
+            if (velocity != null && velocity.getY() > 0) {
+                // prevent glitching through blocks
+                entity.getLocation(temp).setY(Math.ceil(cabinMinY + offset));
                 PaperUtils.teleport(entity, temp);
             }
         }
         cabinEntities.clear();
-//        if (velocity != null) {
-//            long ticksElapsed = world.getGameTime() - movementStartTick;
-//            cabin.shift(velocity.clone().multiply(ticksElapsed / 20d));
-//        }
+        setNearbyDoors(true);
 
         velocity = null;
         moving = false;
     }
 
+    private void setNearbyDoors(boolean state) {
+        // funky way to toggle doors
+        List<Block> visited = new ArrayList<>();
+        BoundingBox doorBox = cabin.clone().expand(1, 1, 1);
+        BlockUtils.forEachBlock(world, doorBox, block -> {
+            BlockData data = block.getBlockData();
+            boolean shouldManage = false;
+            if (data instanceof Door door) {
+                shouldManage = true;
+                door.setOpen(state);
+                door.setPowered(false);
+                block.setBlockData(door, false);
+
+                if (door.getHalf() == Bisected.Half.BOTTOM)
+                    world.playSound(block.getLocation(), state ? Sound.BLOCK_WOODEN_DOOR_OPEN : Sound.BLOCK_WOODEN_DOOR_CLOSE, 0.5f, 1);
+            } else if (data instanceof TrapDoor trapDoor) {
+                shouldManage = true;
+                trapDoor.setOpen(!state);
+                trapDoor.setPowered(false);
+                block.setBlockData(trapDoor, false);
+
+                world.playSound(block.getLocation(), state ? Sound.BLOCK_WOODEN_TRAPDOOR_OPEN : Sound.BLOCK_WOODEN_TRAPDOOR_CLOSE, 0.5f, 1);
+            }
+
+            if (shouldManage) {
+                visited.add(block);
+                if (managedDoors.add(block))
+                    ElevatorManager.managedDoors.put(block, this);
+            }
+        });
+        // remove stale
+        var stale = new ArrayList<>(managedDoors);
+        stale.removeAll(visited);
+        for (var staleDoor : stale) {
+            BlockData data = staleDoor.getBlockData();
+            // unmanage if no longer a door
+            if (!(data instanceof Door || data instanceof TrapDoor)) {
+                ElevatorManager.managedDoors.remove(staleDoor);
+                managedDoors.remove(staleDoor);
+            }
+        }
+    }
+
     public void save() {
         if (Config.debug)
-            Elevator.LOGGER.info("Saving " + controller);
+            debug("Saving " + controller);
         TileState state = (TileState) controller.getState();
         state.getPersistentDataContainer().set(ELEVATOR_CONTROLLER, STORAGE, this);
         state.update();
@@ -232,34 +330,29 @@ public class ElevatorController {
             for (int k = minZ; k < maxZ; k++) {
                 temp.setZ(k);
 
-                String string = "Elevator (" + i + "," + k + ")";
 
                 temp.setY(minY - 1);
                 int currentBottom = BlockUtils.rayTraceVertical(temp, false) + 1;
-                string += ": bottom= " + currentBottom;
                 shaftBottom = Math.max(shaftBottom, currentBottom);
 
                 temp.setY(maxY);
                 int currentTop = BlockUtils.rayTraceVertical(temp, true);
-                string += ", top=" + currentTop;
                 shaftTop = Math.min(shaftTop, currentTop);
-
-                if (Config.debug)
-                    Elevator.LOGGER.info(string);
             }
         }
 
         floors.clear();
         if (scanners.size() == 0) {
+            currentFloorIdx = -1;
             // no indicators, use top and bottom of the shaft
-            int topLevel = shaftTop - maxY + minY;
-            if (topLevel != shaftBottom)
-                floors.add(new ElevatorFloor(String.valueOf(1), topLevel, null));
-            floors.add(new ElevatorFloor(String.valueOf(2), minY, null));
-            floors.add(new ElevatorFloor(String.valueOf(3), shaftBottom, null));
-            currentFloorIdx = 1;
-            if (Config.debug)
-                Elevator.LOGGER.info("No scanner, floors: " + floors);
+//            int topLevel = shaftTop - maxY + minY;
+//            if (topLevel != shaftBottom)
+//                floors.add(new ElevatorFloor(String.valueOf(1), topLevel, null));
+//            floors.add(new ElevatorFloor(String.valueOf(2), minY, null));
+//            floors.add(new ElevatorFloor(String.valueOf(3), shaftBottom, null));
+//            currentFloorIdx = 1;
+//            if (Config.debug)
+//                debug("No scanner, floors: " + floors);
         } else {
             record TempFloor(int cabinY, Block source, String name) {}
             List<TempFloor> tempFloors = new ArrayList<>();
@@ -272,7 +365,7 @@ public class ElevatorController {
                     Block block = location.getBlock();
                     if (block.getType() == Material.NOTE_BLOCK) {
                         if (Config.debug)
-                            Elevator.LOGGER.info("Found floor at " + block);
+                            debug("Found floor at " + block);
 
                         // look for a sign and use it as the floor name
                         String floorName = null;
@@ -295,7 +388,7 @@ public class ElevatorController {
             for (int i = 0; i < tempFloors.size(); i++) {
                 TempFloor floor = tempFloors.get(i);
                 int floorY = floor.cabinY;
-                String realName = floor.name != null ? floor.name : String.valueOf(tempFloors.size() - i);
+                String realName = floor.name != null ? floor.name : Config.getDefaultFloorName(tempFloors.size() - i - 1);
                 floors.add(new ElevatorFloor(realName, floorY, floor.source));
                 if (Math.abs(floorY - minY) < closestFloorDist) {
                     closestFloorDist = Math.abs(floorY - minY);
@@ -305,12 +398,12 @@ public class ElevatorController {
             currentFloorIdx = closestFloor;
 
             if (Config.debug)
-                Elevator.LOGGER.info("Floors: " + floors + ", current: " + currentFloorIdx);
+                debug("Floors: " + floors + ", current: " + currentFloorIdx);
         }
     }
 
     public void moveUp() {
-        scanFloors();
+//        scanFloors();
 
         int minY = (int) cabin.getMinY();
 
@@ -328,7 +421,7 @@ public class ElevatorController {
     }
 
     public void moveDown() {
-        scanFloors();
+//        scanFloors();
         int minY = (int) cabin.getMinY();
 
         // check current floor and lower floor in case the current floor changed
@@ -349,23 +442,24 @@ public class ElevatorController {
     private static final int TIME_MULTIPLIER = 20 / SPEED;
     private void moveTo(int y) {
         int yDiff = y - (int) cabin.getMinY();
-        if (yDiff == 0)
+        if (yDiff == 0 || moving)
             return;
         if (Config.debug)
-            Elevator.LOGGER.info("Moving to " + y + " (" + yDiff + " blocks)");
+            debug("Moving to " + y + " (" + yDiff + " blocks)");
         velocity = new Vector(0, yDiff > 0 ? SPEED : -SPEED, 0);
         movementStartTick = world.getGameTime();
-//        movementEndTick = movementStartTick + Math.abs(yDiff) * 20L;
-        movementTime = Math.abs(yDiff) * TIME_MULTIPLIER + 1;
+        movementTime = Math.abs(yDiff) * TIME_MULTIPLIER;
+        movementEndTick = movementStartTick + movementTime;
 
         mobilize();
         if (Config.debug)
-            Elevator.LOGGER.info("Moving " + movingBlocks.size() + " blocks at " + velocity + " for " + movementTime + " ticks");
+            debug("Moving " + movingBlocks.size() + " blocks to y=" + y + " at velocity=" + velocity + " for " + movementTime + " ticks");
         doMove();
     }
 
     public void tick() {
         if (controller.getType() != MATERIAL) {
+            immobilize();
             ElevatorManager.removeElevator(this); // don't save
             return;
         }
@@ -376,77 +470,107 @@ public class ElevatorController {
             } else {
                 doMove();
             }
-        } else if ((world.getGameTime() & 1) == 0) {
-            // check for elevator calls
-            for (ElevatorFloor floor : floors) {
-                if (floor.source != null) {
-                    BlockData data = floor.source.getBlockData();
-                    if (data.getMaterial() == Material.NOTE_BLOCK && ((NoteBlock) data).isPowered()) {
-                        moveTo(floor.y);
+        } else {
+            // check for cooldown
+            long ticksSinceMovementEnd = world.getGameTime() - movementEndTick;
+            if (ticksSinceMovementEnd < Config.elevatorCooldown) {
+                String cooldownMsg = Config.msgCooldown.replace("{cooldown}", String.valueOf(Math.ceil(ticksSinceMovementEnd / 20f)));
+                for (Player player : scanCabinPlayers()) {
+                    player.sendActionBar(cooldownMsg);
+                }
+                return;
+            }
+
+            if ((world.getGameTime() & 1) == 0) {
+                int currentY = (int) cabin.getMinY();
+                // check for elevator calls
+                for (int i = 0; i < floors.size(); i++) {
+                    var floor = floors.get(i);
+                    if (floor.source != null && floor.y != currentY) {
+                        BlockData data = floor.source.getBlockData();
+                        if (data.getMaterial() == Material.NOTE_BLOCK && ((NoteBlock) data).isPowered()) {
+                            if (Config.debug)
+                                debug("Summoned by note block at (%d,%d,%d), going to y=%d".formatted(
+                                        floor.source.getX(),
+                                        floor.source.getY(),
+                                        floor.source.getZ(),
+                                        floor.y
+                                ));
+                            currentFloorIdx = i;
+                            moveTo(floor.y);
+                            break;
+                        }
                     }
                 }
             }
             // player check
-            var players = world.getNearbyEntities(cabin.getCenter().toLocation(world),
-                    cabin.getWidthX() / 2, cabin.getHeight() / 2, cabin.getWidthZ() / 2,
-                    player -> player instanceof Player && cabin.contains(player.getLocation().toVector()));
-            for (Entity entity : players) {
-                Player player = (Player) entity;
-                boolean jumping = player.getVelocity().getY() > 0;
-                var cache = ElevatorManager.playerElevatorCache.get(player);
-                int floorIdx;
-                if (cache == null || cache.floorIdx() == currentFloorIdx) {
-                    if (jumping || player.isSneaking()) {
-                        // rescan then move up or down a floor
-                        scanFloors();
-                        int newFloor = currentFloorIdx + (jumping ? -1 : 1);
-                        if (newFloor >= 0 && newFloor < floors.size()) {
-                            // reset the selection
-                            ElevatorManager.playerElevatorCache.remove(player);
+            doPlayerTick();
+        }
+    }
 
-                            currentFloorIdx = newFloor;
-                            moveTo(floors.get(newFloor).y);
-                            return;
-                        }
-                    }
-                    // check for scrolling
-                    int slot = player.getInventory().getHeldItemSlot();
-                    int lastSlot = cache != null ? cache.slot() : slot;
-                    floorIdx = lastSlot != slot ? Math.floorMod(currentFloorIdx + slot - lastSlot, floors.size()) : currentFloorIdx;
-                    ElevatorManager.playerElevatorCache.put(player,
-                            new ElevatorManager.PlayerElevator(this, floorIdx, slot));
+    private void doPlayerTick() {
+        var players = scanCabinPlayers();
+        for (Player player : players) {
+            if (currentFloorIdx == -1 || floors.size() == 0) {
+                player.sendActionBar(Config.msgNoFloors);
+                continue;
+            }
 
-                    player.sendActionBar("▶ " + floors.get(floorIdx).name + " | Jump or crouch to move | Scroll to select a floor");
-                } else {
-                    floorIdx = cache.floorIdx();
-                    int lastSlot = cache.slot(), slot = player.getInventory().getHeldItemSlot();
-                    if (lastSlot != slot) {
-                        floorIdx = Math.floorMod(floorIdx + slot - lastSlot, floors.size());
-                        ElevatorManager.playerElevatorCache.put(player,
-                                new ElevatorManager.PlayerElevator(this, floorIdx, slot));
-                    }
+            boolean jumping = player.getVelocity().getY() > 0;
+            var cache = ElevatorManager.playerElevatorCache.get(player);
 
-                    ElevatorFloor floor = floorIdx >= 0 && floorIdx < floors.size() ? floors.get(floorIdx) : null;
-                    if (floor != null && (jumping || player.isSneaking())) {
+            // check for scrolling
+            int slot = player.getInventory().getHeldItemSlot();
+            int lastSlot = cache != null ? cache.slot() : slot;
+            int floorIdx = lastSlot != slot ? Math.floorMod(currentFloorIdx + slot - lastSlot, floors.size()) : currentFloorIdx;
+
+            String rawMessage;
+
+            if (cache == null || cache.floorIdx() == currentFloorIdx) {
+                if (jumping || player.isSneaking()) {
+                    // move up or down a floor
+//                    scanFloors();
+                    int newFloor = currentFloorIdx + (jumping ? -1 : 1);
+                    if (newFloor >= 0 && newFloor < floors.size()) {
                         // reset the selection
                         ElevatorManager.playerElevatorCache.remove(player);
 
-                        currentFloorIdx = floorIdx;
-                        moveTo(floor.y);
+                        currentFloorIdx = newFloor;
+                        moveTo(floors.get(newFloor).y);
+                        return;
                     }
-
-
-                    StringJoiner joiner = new StringJoiner(" | ");
-                    if (floorIdx != floors.size() - 1)
-                        joiner.add("▼ " + floors.get(floorIdx + 1).name);
-                    joiner.add("▶ " + floors.get(floorIdx).name);
-                    if (floorIdx != 0)
-                        joiner.add("▲ " + floors.get(floorIdx - 1).name);
-
-
-                    player.sendActionBar(TextComponent.fromLegacyText(joiner.toString()));
                 }
+                ElevatorManager.playerElevatorCache.put(player,
+                        new ElevatorManager.PlayerElevator(this, floorIdx, slot));
+
+                rawMessage = Config.msgCurrentFloor;
+            } else {
+                floorIdx = cache.floorIdx();
+                if (lastSlot != slot) {
+                    ElevatorManager.playerElevatorCache.put(player,
+                            new ElevatorManager.PlayerElevator(this, floorIdx, slot));
+                }
+
+                ElevatorFloor floor = floorIdx >= 0 && floorIdx < floors.size() ? floors.get(floorIdx) : null;
+                if (floor != null && (jumping || player.isSneaking())) {
+                    // reset the selection
+                    ElevatorManager.playerElevatorCache.remove(player);
+
+                    currentFloorIdx = floorIdx;
+                    moveTo(floor.y);
+                }
+
+                rawMessage = Config.msgFloor;
             }
+
+            String message = Config.getFloorMessage(rawMessage,
+                    floorIdx != floors.size() - 1 ? floors.get(floorIdx + 1).name : null,
+                    floors.get(floorIdx).name,
+                    floorIdx != 0 ? floors.get(floorIdx - 1).name : null
+            );
+
+
+            player.sendActionBar(message);
         }
     }
 
@@ -459,26 +583,24 @@ public class ElevatorController {
             PaperUtils.teleport(block.stand(), block.stand().getLocation(temp).add(delta));
         }
 
-        cabin.shift(delta);
-        Vector cabinMin = cabin.getMin();
+        double cabinMinY = cabin.getMinY();
 
-        // simulate gravity
-//        double entityYVel = delta.getY() > 0 ? delta.getY() : delta.getY() * 2;
         double entityYVel = delta.getY();
+        boolean doTeleport = (world.getGameTime() - movementStartTick) % 5 == 0;
         for (var iter = cabinEntities.entrySet().iterator(); iter.hasNext(); ) {
             var entry = iter.next();
             LivingEntity entity = entry.getKey();
-            Vector offset = entry.getValue();
+            double offset = entry.getValue();
 
             if (entity.isDead()) {
                 iter.remove();
                 continue;
             }
 
-            if (world.getGameTime() % 20 == 0) {
+            if (doTeleport) {
                 // force synchronize location
                 entity.getLocation(temp);
-                temp.setY(cabinMin.getY() + offset.getY());
+                temp.setY(cabinMinY + offset - entityYVel * 2);
                 PaperUtils.teleport(entity, temp);
             }
             entity.setGravity(false);
@@ -490,6 +612,7 @@ public class ElevatorController {
             velocity.setY(entityYVel);
             entity.setVelocity(velocity);
         }
+        cabin.shift(delta);
     }
 
     void showOutline(Collection<Player> players) {
@@ -505,6 +628,15 @@ public class ElevatorController {
             blockDisplay.setGlowing(true);
         });
         Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, display::remove, 10 * 20);
+    }
+    
+    private void debug(String message) {
+        if (Config.debug) {
+            String realMessage = "[Elevator DEBUG] " + message;
+            for (Player player : scanCabinPlayers()) {
+                player.sendMessage(realMessage);
+            }
+        }
     }
 
     public static final NamespacedKey ELEVATOR_CONTROLLER = new NamespacedKey(Elevator.INSTANCE, "elevator_controller");
@@ -554,7 +686,7 @@ public class ElevatorController {
                 case DATA_VERSION -> {
                     int[] cabinCoords = primitive.get(CABIN_KEY, INTEGER_ARRAY);
                     BoundingBox box = new BoundingBox(cabinCoords[0], cabinCoords[1], cabinCoords[2], cabinCoords[3], cabinCoords[4], cabinCoords[5]);
-                    yield new ElevatorController(null, null, box);
+                    yield new ElevatorController(box);
                 }
                 default -> throw new IllegalArgumentException("Invalid data version " + dataVersion);
             };

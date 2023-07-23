@@ -5,8 +5,27 @@ api-version: '1.20'
 commands:
   elevator:
     usage: /elevator <...>
-    permission: elevator.*
+    permission: elevator.command
 
 permissions:
   elevator.*:
     default: op
+    children:
+      elevator.command: true
+      elevator.command.*: true
+  elevator.command:
+    default: true
+
+  elevator.command.*:
+    children:
+      elevator.command.scan: true
+      elevator.command.up: true
+      elevator.command.down: true
+      elevator.command.givecontroller: true
+
+  elevator.command.scan:
+    default: true
+  elevator.command.up:
+    default: true
+  elevator.command.down:
+    default: true

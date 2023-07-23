@@ -8,9 +8,10 @@ public class PaperUtils {
     public static final boolean IS_PAPER = true;
     public static void teleport(Entity entity, Location location) {
         if (IS_PAPER) {
+            // relative flags only matter for the player
             entity.teleport(location,
                     TeleportFlag.EntityState.RETAIN_PASSENGERS,
-                    TeleportFlag.Relative.X, TeleportFlag.Relative.Y, TeleportFlag.Relative.Z,
+                    TeleportFlag.Relative.X, TeleportFlag.Relative.Z,
                     TeleportFlag.Relative.YAW, TeleportFlag.Relative.PITCH);
         }
     }

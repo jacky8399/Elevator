@@ -1,17 +1,17 @@
 package com.jacky8399.elevator;
 
 import org.bukkit.Location;
-import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
-import org.bukkit.entity.*;
+import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.BlockDisplay;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.Shulker;
 import org.bukkit.util.Transformation;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
-
-import java.util.Collection;
 
 public record ElevatorBlock(Entity stand, @Nullable BlockDisplay display, @Nullable Shulker collision) {
     private static final Transformation DISPLAY_TRANSFORMATION =
@@ -31,7 +31,7 @@ public record ElevatorBlock(Entity stand, @Nullable BlockDisplay display, @Nulla
         });
 
         Shulker shulker;
-        if (block.getType().isOccluding()) {
+        if (false && block.getType().isOccluding()) {
             shulker = world.spawn(location, Shulker.class, e -> {
                 e.setAI(false);
                 e.setInvisible(true);

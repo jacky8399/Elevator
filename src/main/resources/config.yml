@@ -1,0 +1,15 @@
+messages:
+  no-floors: '&cNo floors found. Use &e/elevator scan&c to scan for floors.'
+  current-floor: '&cCrouch: {down}&8 | &aCurrent: {current}&8 | &bJump: {up}'
+  floor: '&c▼ {down}&8 | &aSelected: {current}&7 (jump or crouch to go)&8 | &b▲ {up}'
+  # Used e.g. when the elevator cannot go lower
+  no-floor: '&7&m   &r'
+  # For British floor names:
+  #  default-ground-floor-name: 'G/F'
+  #  default-floor-name: '{floorMinusOne}/F'
+  default-ground-floor-name: '1/F'
+  default-floor-name: '{floor}/F'
+  cooldown: '&cStopping for {cooldown} seconds'
+elevator:
+  # The cooldown in ticks
+  cooldown: 100

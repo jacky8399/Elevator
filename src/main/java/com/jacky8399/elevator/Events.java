@@ -9,14 +9,15 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.TileState;
 import org.bukkit.block.data.Directional;
+import org.bukkit.block.data.Openable;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.BlockRedstoneEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.util.BlockVector;
@@ -52,14 +53,9 @@ public class Events implements Listener {
         if (controller == null)
             return;
         e.setCancelled(true);
-        if (e.getPlayer().isSneaking()) {
+        if (!e.getPlayer().isSneaking()) {
             controller.showOutline(List.of(e.getPlayer()));
-            return;
         }
-        if (controller.moving)
-            controller.immobilize();
-        else
-            controller.mobilize();
     }
 
     @EventHandler
@@ -92,6 +88,15 @@ public class Events implements Listener {
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent e) {
         ElevatorManager.playerElevatorCache.remove(e.getPlayer());
+    }
+
+    @EventHandler
+    public void onBlockRedstone(BlockRedstoneEvent e) {
+        Block block = e.getBlock();
+        if (ElevatorManager.managedDoors.containsKey(block)) {
+            Openable data = (Openable) block.getBlockData();
+            e.setNewCurrent(data.isOpen() ? 15 : 0);
+        }
     }
 
 }

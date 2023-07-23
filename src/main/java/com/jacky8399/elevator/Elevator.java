@@ -3,10 +3,8 @@ package com.jacky8399.elevator;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.World;
-import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.WeakHashMap;
 import java.util.logging.Logger;
 
 public final class Elevator extends JavaPlugin {
@@ -20,6 +18,9 @@ public final class Elevator extends JavaPlugin {
     public void onEnable() {
         INSTANCE = this;
         LOGGER = getLogger();
+
+        saveDefaultConfig();
+        reloadConfig();
 
         getCommand("elevator").setExecutor(new CommandElevator());
 
@@ -43,6 +44,14 @@ public final class Elevator extends JavaPlugin {
         }
         ElevatorManager.elevators.clear();
         ElevatorManager.playerElevatorCache.clear();
+        ElevatorManager.managedDoors.clear();
+    }
+
+    @Override
+    public void reloadConfig() {
+        super.reloadConfig();
+        Config.reload();
+        saveConfig();
     }
 
     public void tick() {
