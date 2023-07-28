@@ -17,6 +17,7 @@ import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockRedstoneEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
@@ -97,6 +98,11 @@ public class Events implements Listener {
             Openable data = (Openable) block.getBlockData();
             e.setNewCurrent(data.isOpen() ? 15 : 0);
         }
+    }
+
+    @EventHandler
+    public void onPlayerHotbar(PlayerItemHeldEvent e) {
+
     }
 
 }

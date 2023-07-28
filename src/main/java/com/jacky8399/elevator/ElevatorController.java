@@ -10,9 +10,8 @@ import org.bukkit.block.Sign;
 import org.bukkit.block.TileState;
 import org.bukkit.block.data.Bisected;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Directional;
 import org.bukkit.block.data.type.Door;
-import org.bukkit.block.data.type.NoteBlock;
-import org.bukkit.block.data.type.Observer;
 import org.bukkit.block.data.type.TrapDoor;
 import org.bukkit.block.sign.Side;
 import org.bukkit.entity.*;
@@ -41,6 +40,7 @@ public class ElevatorController {
     @NotNull
     BoundingBox cabin;
 
+    boolean maintenance;
     boolean moving;
     List<ElevatorBlock> movingBlocks;
 
@@ -98,7 +98,7 @@ public class ElevatorController {
                 }
             }
 
-            double deltaY = temp.getY() - cabin.getMinY();
+            double deltaY = temp.getY() - cabin.getMinY() - velocity.getY() / 20;
             this.cabinEntities.put((LivingEntity) entity, deltaY);
         }
 
@@ -110,6 +110,11 @@ public class ElevatorController {
         movingBlocks = new ArrayList<>(noOfBlocks);
         var toBreak = new ArrayList<Block>();
         var toBreakNonSolid = new ArrayList<Block>();
+
+
+        Transformation displayTransformation =
+                new Transformation(new Vector3f(-0.5f, (float) velocity.getY() / 20f, -0.5f), new Quaternionf(), new Vector3f(1, 1, 1), new Quaternionf());
+
         for (int j = minY; j < maxY; j++) {
             boolean isFloor = j == minY;
             boolean isCeiling = j == maxY - 1;
@@ -120,7 +125,7 @@ public class ElevatorController {
                     if (block.equals(controller) || type == Material.AIR || block.getState() instanceof TileState)
                         continue;
 
-                    movingBlocks.add(ElevatorBlock.spawnFor(world, block));
+                    movingBlocks.add(ElevatorBlock.spawnFor(world, block, displayTransformation));
 
                     if (false) {
                         // special treatment for floors and ceilings
@@ -187,10 +192,12 @@ public class ElevatorController {
                 location.setY(Math.round(location.getY()));
                 Block solidBlock = location.getBlock();
                 BlockData toPlace = block.display().getBlock();
-                if (solidBlock.getType() == Material.AIR)
+                if (solidBlock.getType() == Material.AIR) {
                     solidBlock.setBlockData(toPlace, true);
-                else
+                } else {
+                    world.playEffect(location, Effect.STEP_SOUND, toPlace.getMaterial());
                     world.dropItemNaturally(location, new ItemStack(toPlace.getPlacementMaterial()));
+                }
             }
             block.remove();
         }
@@ -204,7 +211,6 @@ public class ElevatorController {
 
         double cabinMinY = cabin.getMinY();
 
-        Location temp = controller.getLocation();
         for (var entry : cabinEntities.entrySet()) {
             LivingEntity entity = entry.getKey();
             double offset = entry.getValue();
@@ -216,8 +222,8 @@ public class ElevatorController {
             }
             if (velocity != null && velocity.getY() > 0) {
                 // prevent glitching through blocks
-                entity.getLocation(temp).setY(Math.ceil(cabinMinY + offset));
-                PaperUtils.teleport(entity, temp);
+                entity.getLocation(location).setY(Math.round(cabinMinY + offset));
+                PaperUtils.teleport(entity, location);
             }
         }
         cabinEntities.clear();
@@ -315,9 +321,12 @@ public class ElevatorController {
                 for (int k = minZ; k < maxZ; k++) {
                     Block block = world.getBlockAt(i, j, k);
 
-                    if (block.getType() == Material.OBSERVER) {
-                        BlockData data = block.getBlockData();
-                        scanners.add(new FloorScanner(block, ((Observer) data).getFacing()));
+                    if (block.getType() == Config.elevatorScannerBlock) {
+                        if (Config.elevatorScannerDirectional && block.getBlockData() instanceof Directional directional) {
+                            scanners.add(new FloorScanner(block, directional.getFacing()));
+                        } else {
+                            scanners.add(new FloorScanner(block, null));
+                        }
                     }
                 }
             }
@@ -345,25 +354,26 @@ public class ElevatorController {
         if (scanners.size() == 0) {
             currentFloorIdx = -1;
             // no indicators, use top and bottom of the shaft
-//            int topLevel = shaftTop - maxY + minY;
-//            if (topLevel != shaftBottom)
-//                floors.add(new ElevatorFloor(String.valueOf(1), topLevel, null));
-//            floors.add(new ElevatorFloor(String.valueOf(2), minY, null));
-//            floors.add(new ElevatorFloor(String.valueOf(3), shaftBottom, null));
-//            currentFloorIdx = 1;
-//            if (Config.debug)
-//                debug("No scanner, floors: " + floors);
+            int topLevel = shaftTop - maxY + minY;
+            int floor = 1;
+            if (shaftBottom != minY)
+                floors.add(new ElevatorFloor(String.valueOf(floor++), shaftBottom, null));
+            floors.add(new ElevatorFloor(String.valueOf(floor), minY, null));
+            currentFloorIdx = floor++ - 1;
+            if (topLevel != shaftBottom && topLevel != minY)
+                floors.add(new ElevatorFloor(String.valueOf(floor), topLevel, null));
+            if (Config.debug)
+                debug("No scanner, floors: " + floors);
         } else {
             record TempFloor(int cabinY, Block source, String name) {}
             List<TempFloor> tempFloors = new ArrayList<>();
             for (var scanner : scanners) {
                 int y = scanner.block.getY();
                 Location location = scanner.block.getRelative(scanner.face).getLocation();
-//                BlockFace checkFace = scanner.face.getOppositeFace();
                 for (int i = shaftBottom + y - minY, end = shaftTop - (maxY - y); i <= end; i++) {
                     location.setY(i);
                     Block block = location.getBlock();
-                    if (block.getType() == Material.NOTE_BLOCK) {
+                    if (block.getType() == Config.elevatorFloorBlock) {
                         if (Config.debug)
                             debug("Found floor at " + block);
 
@@ -464,6 +474,15 @@ public class ElevatorController {
             return;
         }
 
+        if (maintenance) {
+            if ((int) world.getGameTime() % 5 == 0) {
+                for (Player player : scanCabinPlayers()) {
+                    player.sendActionBar(Config.msgMaintenance);
+                }
+            }
+            return;
+        }
+
         if (moving) {
             if (movementTime == 0) {
                 immobilize();
@@ -474,7 +493,8 @@ public class ElevatorController {
             // check for cooldown
             long ticksSinceMovementEnd = world.getGameTime() - movementEndTick;
             if (ticksSinceMovementEnd < Config.elevatorCooldown) {
-                String cooldownMsg = Config.msgCooldown.replace("{cooldown}", String.valueOf(Math.ceil(ticksSinceMovementEnd / 20f)));
+                String cooldownMsg = Config.msgCooldown.replace("{cooldown}",
+                        String.valueOf((int) ((Config.elevatorCooldown - ticksSinceMovementEnd) / 20)));
                 for (Player player : scanCabinPlayers()) {
                     player.sendActionBar(cooldownMsg);
                 }
@@ -488,7 +508,7 @@ public class ElevatorController {
                     var floor = floors.get(i);
                     if (floor.source != null && floor.y != currentY) {
                         BlockData data = floor.source.getBlockData();
-                        if (data.getMaterial() == Material.NOTE_BLOCK && ((NoteBlock) data).isPowered()) {
+                        if (data.getMaterial() == Config.elevatorFloorBlock && floor.source.isBlockIndirectlyPowered()) {
                             if (Config.debug)
                                 debug("Summoned by note block at (%d,%d,%d), going to y=%d".formatted(
                                         floor.source.getX(),
@@ -512,6 +532,7 @@ public class ElevatorController {
         var players = scanCabinPlayers();
         for (Player player : players) {
             if (currentFloorIdx == -1 || floors.size() == 0) {
+                ElevatorManager.playerElevatorCache.put(player, new ElevatorManager.PlayerElevator(this, 0));
                 player.sendActionBar(Config.msgNoFloors);
                 continue;
             }
@@ -520,9 +541,9 @@ public class ElevatorController {
             var cache = ElevatorManager.playerElevatorCache.get(player);
 
             // check for scrolling
-            int slot = player.getInventory().getHeldItemSlot();
-            int lastSlot = cache != null ? cache.slot() : slot;
-            int floorIdx = lastSlot != slot ? Math.floorMod(currentFloorIdx + slot - lastSlot, floors.size()) : currentFloorIdx;
+//            int slot = player.getInventory().getHeldItemSlot();
+//            int lastSlot = cache != null ? cache.slot() : slot;
+            int floorIdx = currentFloorIdx;
 
             String rawMessage;
 
@@ -541,15 +562,11 @@ public class ElevatorController {
                     }
                 }
                 ElevatorManager.playerElevatorCache.put(player,
-                        new ElevatorManager.PlayerElevator(this, floorIdx, slot));
+                        new ElevatorManager.PlayerElevator(this, floorIdx));
 
                 rawMessage = Config.msgCurrentFloor;
             } else {
                 floorIdx = cache.floorIdx();
-                if (lastSlot != slot) {
-                    ElevatorManager.playerElevatorCache.put(player,
-                            new ElevatorManager.PlayerElevator(this, floorIdx, slot));
-                }
 
                 ElevatorFloor floor = floorIdx >= 0 && floorIdx < floors.size() ? floors.get(floorIdx) : null;
                 if (floor != null && (jumping || player.isSneaking())) {
@@ -576,17 +593,27 @@ public class ElevatorController {
 
     void doMove() {
         movementTime--;
+        boolean doTeleport = (world.getGameTime() - movementStartTick) % 10 == 0;
         // sync armor stands
         Location temp = controller.getLocation();
         Vector delta = velocity.clone().multiply(1/20f);
-        for (ElevatorBlock block : movingBlocks) {
-            PaperUtils.teleport(block.stand(), block.stand().getLocation(temp).add(delta));
-        }
+//        if (doTeleport) {
+            double deltaY = velocity.getY() / 20d;
+            for (ElevatorBlock block : movingBlocks) {
+                PaperUtils.teleport(block.stand(), block.stand().getLocation(temp).add(0, deltaY, 0));
+//                BlockDisplay display = block.display();
+//                if (display != null) {
+//                    display.setTransformation(new Transformation(new Vector3f(-0.5f, (float) deltaY * 2f, -0.5f),
+//                            new Quaternionf(), new Vector3f(1, 1, 1), new Quaternionf()));
+////                    display.setInterpolationDelay(0);
+////                    display.setInterpolationDuration(1);
+//                }
+            }
+//        }
 
         double cabinMinY = cabin.getMinY();
 
         double entityYVel = delta.getY();
-        boolean doTeleport = (world.getGameTime() - movementStartTick) % 5 == 0;
         for (var iter = cabinEntities.entrySet().iterator(); iter.hasNext(); ) {
             var entry = iter.next();
             LivingEntity entity = entry.getKey();
@@ -600,7 +627,7 @@ public class ElevatorController {
             if (doTeleport) {
                 // force synchronize location
                 entity.getLocation(temp);
-                temp.setY(cabinMinY + offset - entityYVel * 2);
+                temp.setY(cabinMinY + offset);
                 PaperUtils.teleport(entity, temp);
             }
             entity.setGravity(false);
@@ -622,8 +649,7 @@ public class ElevatorController {
 
             blockDisplay.setBlock(Material.GLASS.createBlockData());
             var scale = new Vector3f((float) cabin.getWidthX() + 0.2f, (float) cabin.getHeight() + 0.2f, (float) cabin.getWidthZ() + 0.2f);
-            blockDisplay.setTransformation(new Transformation(new Vector3f(), new Quaternionf(), scale,
-                    new Quaternionf()));
+            blockDisplay.setTransformation(new Transformation(new Vector3f(), new Quaternionf(), scale, new Quaternionf()));
             blockDisplay.setBrightness(new Display.Brightness(15, 15));
             blockDisplay.setGlowing(true);
         });

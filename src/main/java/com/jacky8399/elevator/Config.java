@@ -1,12 +1,16 @@
 package com.jacky8399.elevator;
 
 import net.md_5.bungee.api.ChatColor;
+import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 public class Config {
@@ -20,8 +24,17 @@ public class Config {
     public static String msgDefaultGroundFloorName;
     public static String msgDefaultFloorName;
     public static String msgCooldown;
+    public static String msgMaintenance;
+
+    public static String msgScanResult;
+    public static String msgScannedFloor;
+    public static String msgScannedCurrentFloor;
 
     public static int elevatorCooldown;
+
+    public static Material elevatorFloorBlock;
+    public static Material elevatorScannerBlock;
+    public static boolean elevatorScannerDirectional;
 
     private static final Map<Integer, String> floorNameCache = new HashMap<>();
 
@@ -36,8 +49,16 @@ public class Config {
         msgDefaultGroundFloorName = getColorString(config, "messages.default-ground-floor-name");
         msgDefaultFloorName = getColorString(config, "messages.default-floor-name");
         msgCooldown = getColorString(config, "messages.cooldown");
+        msgScanResult = getColorString(config, "messages.scan.result");
+        msgScannedFloor = getColorString(config, "messages.scan.scanned-floor");
+        msgScannedCurrentFloor = getColorString(config, "messages.scan.scanned-current-floor");
+        msgMaintenance = getColorString(config, "messages.maintenance");
 
         elevatorCooldown = config.getInt("elevator.cooldown");
+
+        elevatorFloorBlock = getBlock(config, "elevator.scanner.floor-block");
+        elevatorScannerBlock = getBlock(config, "elevator.scanner.scanner-block");
+        elevatorScannerDirectional = config.getBoolean("elevator.scanner.scanner-directional");
     }
 
     // Utilities
@@ -48,6 +69,12 @@ public class Config {
         return string != null ? ChatColor.translateAlternateColorCodes('&',
                 RGB_PATTERN.matcher(string).replaceAll(result -> ChatColor.of("#" + result.group(1)).toString())) :
                 null;
+    }
+
+    private static Material getBlock(ConfigurationSection yaml, String path) {
+        String string = Objects.requireNonNull(yaml.getString(path), path + " cannot be null");
+        NamespacedKey key = Objects.requireNonNull(NamespacedKey.fromString(string), "Invalid key " + string);
+        return Objects.requireNonNull(Registry.MATERIAL.get(key), "Invalid block " + string);
     }
 
     public static String getFloorMessage(String raw, @Nullable String lowerFloor, @Nullable String currentFloor, @Nullable String upperFloor) {

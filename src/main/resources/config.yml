@@ -10,6 +10,22 @@ messages:
   default-ground-floor-name: '1/F'
   default-floor-name: '{floor}/F'
   cooldown: '&cStopping for {cooldown} seconds'
+  maintenance: '&cThis elevator is in maintenance.'
+
+  scan:
+    result: '&eFound {floors} floors:'
+    scanned-floor: '- {name} @ Y={y}'
+    scanned-current-floor: '> {name} @ Y={y}'
+
 elevator:
   # The cooldown in ticks
-  cooldown: 100
+  cooldown: 60
+
+  # The floor scanner.
+  scanner:
+    # The block type to scan from
+    scanner-block: observer
+    # If directional
+    scanner-directional: true
+    # The block type to look for
+    floor-block: lodestone

@@ -14,10 +14,8 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 public record ElevatorBlock(Entity stand, @Nullable BlockDisplay display, @Nullable Shulker collision) {
-    private static final Transformation DISPLAY_TRANSFORMATION =
-            new Transformation(new Vector3f(-0.5f, 0, -0.5f), new Quaternionf(), new Vector3f(1, 1, 1), new Quaternionf());
 
-    public static ElevatorBlock spawnFor(World world, Block block) {
+    public static ElevatorBlock spawnFor(World world, Block block, Transformation transformation) {
         BlockData data = block.getBlockData();
 
         Location location = block.getLocation().add(0.5, 0, 0.5);
@@ -25,7 +23,7 @@ public record ElevatorBlock(Entity stand, @Nullable BlockDisplay display, @Nulla
 
         BlockDisplay display = world.spawn(location, BlockDisplay.class, e -> {
             e.setBlock(data);
-            e.setTransformation(DISPLAY_TRANSFORMATION);
+            e.setTransformation(transformation);
 
             base.addPassenger(e);
         });

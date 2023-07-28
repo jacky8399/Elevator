@@ -10,7 +10,7 @@ import java.util.*;
 public class ElevatorManager {
     public static final Map<BlockVector, ElevatorController> elevators = new LinkedHashMap<>();
 
-    public record PlayerElevator(ElevatorController controller, int floorIdx, int slot) {}
+    public record PlayerElevator(ElevatorController controller, int floorIdx) {}
     public static final WeakHashMap<Player, PlayerElevator> playerElevatorCache = new WeakHashMap<>();
 
     public static final Map<Block, ElevatorController> managedDoors = new HashMap<>();

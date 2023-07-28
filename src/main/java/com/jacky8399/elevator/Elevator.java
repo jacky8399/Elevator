@@ -51,6 +51,9 @@ public final class Elevator extends JavaPlugin {
     public void reloadConfig() {
         super.reloadConfig();
         Config.reload();
+
+        getConfig().options().copyDefaults(true).parseComments(true);
+
         saveConfig();
     }
 
