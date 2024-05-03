@@ -10,22 +10,23 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Shulker;
 import org.bukkit.util.Transformation;
 import org.jetbrains.annotations.Nullable;
-import org.joml.Quaternionf;
-import org.joml.Vector3f;
 
 public record ElevatorBlock(Entity stand, @Nullable BlockDisplay display, @Nullable Shulker collision) {
 
-    public static ElevatorBlock spawnFor(World world, Block block, Transformation transformation) {
+    public static ElevatorBlock spawnFor(World world, Block block, Location displayEntityLocation, Transformation transformation, int interpolationDuration) {
         BlockData data = block.getBlockData();
 
-        Location location = block.getLocation().add(0.5, 0, 0.5);
-        Entity base = spawnBase(world, location);
+        Location location = block.getLocation();
+        Location centerLocation = location.clone().add(0.5, 0, 0.5);
+        Entity base = spawnBase(world, centerLocation);
 
-        BlockDisplay display = world.spawn(location, BlockDisplay.class, e -> {
+        BlockDisplay display = world.spawn(displayEntityLocation, BlockDisplay.class, e -> {
             e.setBlock(data);
-            e.setTransformation(transformation);
+//            e.setTransformation(transformation);
+//            e.setInterpolationDelay(0);
+//            e.setInterpolationDuration(interpolationDuration);
 
-            base.addPassenger(e);
+//            base.addPassenger(e);
         });
 
         Shulker shulker;
@@ -71,6 +72,7 @@ public record ElevatorBlock(Entity stand, @Nullable BlockDisplay display, @Nulla
             stand.setInvulnerable(true);
             stand.setInvisible(true);
             stand.setCanTick(true);
+            stand.setCanMove(true);
         });
     }
 }

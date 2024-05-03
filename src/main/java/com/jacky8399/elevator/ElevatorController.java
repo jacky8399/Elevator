@@ -28,9 +28,11 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import java.util.*;
+import java.util.logging.Level;
 
 public class ElevatorController {
     public static final Material MATERIAL = Material.DROPPER;
+    public static final double OMG_MAGICAL_DRAG_CONSTANT = 0.98;
 
     @NotNull
     World world;
@@ -50,6 +52,8 @@ public class ElevatorController {
     List<ElevatorFloor> floors = new ArrayList<>();
     int currentFloorIdx = 1;
     record ElevatorFloor(String name, int y, @Nullable Block source) {}
+
+    Map<Integer, String> floorNameOverrides = new HashMap<>();
 
     Vector velocity;
     long movementStartTick;
@@ -98,7 +102,7 @@ public class ElevatorController {
                 }
             }
 
-            double deltaY = temp.getY() - cabin.getMinY() - velocity.getY() / 20;
+            double deltaY = temp.getY() - cabin.getMinY();
             this.cabinEntities.put((LivingEntity) entity, deltaY);
         }
 
@@ -111,10 +115,15 @@ public class ElevatorController {
         var toBreak = new ArrayList<Block>();
         var toBreakNonSolid = new ArrayList<Block>();
 
+        // offset Y by 2 tick since interpolation also begins in 2 tick
+//        Transformation displayTransformation =
+//                new Transformation(new Vector3f(-0.5f, 0.01f, -0.5f), new Quaternionf(), new Vector3f(1, 1, 1), new Quaternionf());
+        Transformation displayTransformation = new Transformation(new Vector3f(), new Quaternionf(), new Vector3f(1,1,1), new Quaternionf());
+        Transformation movingDisplayTransformation =
+                new Transformation(new Vector3f(0, (float) (velocity.getY() / 20 * (movementTime - 2)), 0),
+                        new Quaternionf(), new Vector3f(1, 1, 1), new Quaternionf());
 
-        Transformation displayTransformation =
-                new Transformation(new Vector3f(-0.5f, (float) velocity.getY() / 20f, -0.5f), new Quaternionf(), new Vector3f(1, 1, 1), new Quaternionf());
-
+        byte maxBrightness = 0;
         for (int j = minY; j < maxY; j++) {
             boolean isFloor = j == minY;
             boolean isCeiling = j == maxY - 1;
@@ -125,7 +134,9 @@ public class ElevatorController {
                     if (block.equals(controller) || type == Material.AIR || block.getState() instanceof TileState)
                         continue;
 
-                    movingBlocks.add(ElevatorBlock.spawnFor(world, block, displayTransformation));
+                    ElevatorBlock elevatorBlock = ElevatorBlock.spawnFor(world, block, block.getLocation().add(0, (float) (velocity.getY() / 20 * 2), 0),
+                            movingDisplayTransformation, movementTime);
+                    movingBlocks.add(elevatorBlock);
 
                     if (false) {
                         // special treatment for floors and ceilings
@@ -139,6 +150,10 @@ public class ElevatorController {
                         }
                     }
 
+                    byte light = block.getLightFromBlocks();
+                    if (light > maxBrightness)
+                        maxBrightness = light;
+
                     if (type.isOccluding())
                         toBreak.add(block);
                     else
@@ -146,12 +161,29 @@ public class ElevatorController {
                 }
             }
         }
-        for (Block block : toBreakNonSolid) {
-            block.setType(Material.AIR, false);
-        }
-        for (Block block : toBreak) {
-            block.setType(Material.AIR);
-        }
+        Bukkit.getScheduler().runTask(Elevator.INSTANCE, () -> {
+            for (Block block : toBreakNonSolid) {
+                block.setType(Material.AIR, false);
+            }
+            for (Block block : toBreak) {
+                block.setType(Material.AIR);
+            }
+        });
+
+        byte finalMaxBrightness = maxBrightness;
+        var brightness = new Display.Brightness(15, 0);
+        Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
+            for (ElevatorBlock elevatorBlock : movingBlocks) {
+                var display = elevatorBlock.display();
+                if (display != null) {
+                    if (finalMaxBrightness == 14 || finalMaxBrightness == 15)
+                        display.setBrightness(brightness);
+                    display.setInterpolationDelay(0);
+                    display.setInterpolationDuration(movementTime);
+                    display.setTransformation(movingDisplayTransformation);
+                }
+            }
+        }, 2);
 
         moving = true;
     }
@@ -163,8 +195,8 @@ public class ElevatorController {
                 return false;
             // shrink entity hitbox for leniency
             BoundingBox box = e.getBoundingBox().expand(-0.05, -0.05, -0.05);
-            // ensure that the full bounding box is inside the cabin
-            return cabin.contains(box.getMin()) && cabin.contains(box.getMax());
+            // ensure that the half of the bounding box is inside the cabin
+            return cabin.contains(box.getCenter()) && (cabin.contains(box.getMin()) || cabin.contains(box.getMax()));
         });
     }
 
@@ -176,7 +208,7 @@ public class ElevatorController {
             // shrink entity hitbox for leniency
             BoundingBox box = e.getBoundingBox().expand(-0.05, -0.05, -0.05);
             // ensure that the full bounding box is inside the cabin
-            return cabin.contains(box.getMin()) && cabin.contains(box.getMax());
+            return cabin.contains(box.getCenter()) && (cabin.contains(box.getMin()) || cabin.contains(box.getMax()));
         });
     }
 
@@ -185,6 +217,7 @@ public class ElevatorController {
             return;
 
         Location location = controller.getLocation();
+        var oldMovingBlocks = List.copyOf(movingBlocks);
         for (ElevatorBlock block : movingBlocks) {
             if (block.display() != null) {
                 block.stand().getLocation(location);
@@ -199,9 +232,18 @@ public class ElevatorController {
                     world.dropItemNaturally(location, new ItemStack(toPlace.getPlacementMaterial()));
                 }
             }
-            block.remove();
+            // defer removal
         }
         movingBlocks.clear();
+        Elevator.mustCleanupList.add(oldMovingBlocks);
+        Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
+            for (ElevatorBlock block : oldMovingBlocks) {
+                block.remove();
+            }
+            Elevator.mustCleanupList.remove(oldMovingBlocks);
+            if (Config.debug)
+                debug("Cleaned up " + oldMovingBlocks.size() + " entities");
+        }, 2);
 
         // round cabin
         cabin.resize(Math.round(cabin.getMinX()), Math.round(cabin.getMinY()), Math.round(cabin.getMinZ()),
@@ -220,11 +262,9 @@ public class ElevatorController {
             if (entity instanceof Player player) {
                 PlayerUtils.unsetAllowFlight(player);
             }
-            if (velocity != null && velocity.getY() > 0) {
-                // prevent glitching through blocks
-                entity.getLocation(location).setY(Math.round(cabinMinY + offset));
-                PaperUtils.teleport(entity, location);
-            }
+            // prevent glitching through blocks
+            entity.getLocation(location).setY(Math.round(cabinMinY + offset) + 0.1);
+            PaperUtils.teleport(entity, location);
         }
         cabinEntities.clear();
         setNearbyDoors(true);
@@ -292,8 +332,9 @@ public class ElevatorController {
             ElevatorController controller = state.getPersistentDataContainer().get(ELEVATOR_CONTROLLER, STORAGE);
             if (controller == null)
                 return null;
-            if (Config.debug)
-                Elevator.LOGGER.info("Loaded " + block);
+            if (Config.debug) {
+                Elevator.LOGGER.log(Level.INFO, "Loaded " + block, new RuntimeException());
+            }
             controller.controller = block;
             controller.world = block.getWorld();
             controller.scanFloors();
@@ -306,6 +347,12 @@ public class ElevatorController {
     }
 
     public void scanFloors() {
+        // clear previous floors from the global cache
+        for (ElevatorFloor floor : floors) {
+            if (floor.source != null)
+                ElevatorManager.managedFloors.remove(floor.source);
+        }
+
         int minX = (int) cabin.getMinX();
         int minY = (int) cabin.getMinY();
         int minZ = (int) cabin.getMinZ();
@@ -339,7 +386,6 @@ public class ElevatorController {
             for (int k = minZ; k < maxZ; k++) {
                 temp.setZ(k);
 
-
                 temp.setY(minY - 1);
                 int currentBottom = BlockUtils.rayTraceVertical(temp, false) + 1;
                 shaftBottom = Math.max(shaftBottom, currentBottom);
@@ -351,7 +397,7 @@ public class ElevatorController {
         }
 
         floors.clear();
-        if (scanners.size() == 0) {
+        if (scanners.isEmpty()) {
             currentFloorIdx = -1;
             // no indicators, use top and bottom of the shaft
             int topLevel = shaftTop - maxY + minY;
@@ -377,21 +423,23 @@ public class ElevatorController {
                         if (Config.debug)
                             debug("Found floor at " + block);
 
-                        // look for a sign and use it as the floor name
-                        String floorName = null;
-                        for (BlockFace face : BlockFace.values()) {
-                            Block side = block.getRelative(face);
-                            if (Tag.SIGNS.isTagged(side.getType())) {
-                                Sign sign = (Sign) side.getState();
+                        String floorName = floorNameOverrides.get(i); // look for a name override
+                        // else look for a sign and use it as the floor name
+                        if (floorName == null) {
+                            for (BlockFace face : BlockFace.values()) {
+                                Block side = block.getRelative(face);
+                                if (Tag.SIGNS.isTagged(side.getType())) {
+                                    Sign sign = (Sign) side.getState();
 
-                                floorName = sign.getSide(Side.FRONT).getLine(0);
+                                    floorName = sign.getSide(Side.FRONT).getLine(0);
+                                }
                             }
                         }
                         tempFloors.add(new TempFloor(i - minY + y, block, floorName));
                     }
                 }
             }
-            tempFloors.sort(Collections.reverseOrder(Comparator.comparingInt(TempFloor::cabinY)));
+            tempFloors.sort(Comparator.comparingInt(tf -> -tf.cabinY));
 
             int closestFloorDist = world.getMaxHeight();
             int closestFloor = -1;
@@ -410,6 +458,15 @@ public class ElevatorController {
             if (Config.debug)
                 debug("Floors: " + floors + ", current: " + currentFloorIdx);
         }
+        var floorYs = new HashSet<Integer>();
+        for (ElevatorFloor floor : floors) {
+            floorYs.add(floor.y);
+            // add new floors to the global cache
+            if (floor.source != null)
+                ElevatorManager.managedFloors.put(floor.source, this);
+        }
+        // remove unused floor overrides
+        floorNameOverrides.keySet().retainAll(floorYs);
     }
 
     public void moveUp() {
@@ -468,6 +525,11 @@ public class ElevatorController {
     }
 
     public void tick() {
+        if (!controller.getChunk().isLoaded()) {
+            Elevator.LOGGER.warning("Elevator (%d,%d,%d) is in an unloaded chunk, pretty scary stuff!".formatted(controller.getX(), controller.getY(), controller.getZ()));
+            ElevatorManager.removeElevator(this); // don't save
+            return;
+        }
         if (controller.getType() != MATERIAL) {
             immobilize();
             ElevatorManager.removeElevator(this); // don't save
@@ -531,11 +593,14 @@ public class ElevatorController {
     private void doPlayerTick() {
         var players = scanCabinPlayers();
         for (Player player : players) {
-            if (currentFloorIdx == -1 || floors.size() == 0) {
+            if (currentFloorIdx == -1 || floors.isEmpty()) {
                 ElevatorManager.playerElevatorCache.put(player, new ElevatorManager.PlayerElevator(this, 0));
                 player.sendActionBar(Config.msgNoFloors);
                 continue;
             }
+
+            if (player.isFlying())
+                continue;
 
             boolean jumping = player.getVelocity().getY() > 0;
             var cache = ElevatorManager.playerElevatorCache.get(player);
@@ -593,52 +658,55 @@ public class ElevatorController {
 
     void doMove() {
         movementTime--;
-        boolean doTeleport = (world.getGameTime() - movementStartTick) % 10 == 0;
+        long elapsed = world.getGameTime() - movementStartTick;
+        boolean doTeleport = elapsed % 10 == 0;
         // sync armor stands
         Location temp = controller.getLocation();
         Vector delta = velocity.clone().multiply(1/20f);
+        Bukkit.getScheduler().runTask(Elevator.INSTANCE, () -> {
+
 //        if (doTeleport) {
             double deltaY = velocity.getY() / 20d;
             for (ElevatorBlock block : movingBlocks) {
                 PaperUtils.teleport(block.stand(), block.stand().getLocation(temp).add(0, deltaY, 0));
-//                BlockDisplay display = block.display();
-//                if (display != null) {
-//                    display.setTransformation(new Transformation(new Vector3f(-0.5f, (float) deltaY * 2f, -0.5f),
-//                            new Quaternionf(), new Vector3f(1, 1, 1), new Quaternionf()));
-////                    display.setInterpolationDelay(0);
-////                    display.setInterpolationDuration(1);
-//                }
             }
 //        }
 
-        double cabinMinY = cabin.getMinY();
+            double cabinMinY = cabin.getMinY();
 
-        double entityYVel = delta.getY();
-        for (var iter = cabinEntities.entrySet().iterator(); iter.hasNext(); ) {
-            var entry = iter.next();
-            LivingEntity entity = entry.getKey();
-            double offset = entry.getValue();
+            double entityYVel = delta.getY();
+            for (var iter = cabinEntities.entrySet().iterator(); iter.hasNext(); ) {
+                var entry = iter.next();
+                LivingEntity entity = entry.getKey();
+                double offset = entry.getValue();
+                double adjustment = 0;
 
-            if (entity.isDead()) {
-                iter.remove();
-                continue;
-            }
+                if (entity.isDead()) {
+                    iter.remove();
+                    continue;
+                }
 
-            if (doTeleport) {
-                // force synchronize location
-                entity.getLocation(temp);
-                temp.setY(cabinMinY + offset);
-                PaperUtils.teleport(entity, temp);
+                if (doTeleport) {
+                    // force synchronize location
+                    entity.getLocation(temp);
+                    if (Config.debug) {
+                        debug("Player: %s, offset: %.2f, expected Y: %.4f, actual Y: %.4f".formatted(entity.getName(), offset, cabinMinY + offset, temp.getY()));
+                    }
+                    if (Math.abs(cabinMinY + offset - temp.getY()) > 0.5) {
+                        temp.setY(cabinMinY + offset);
+                        PaperUtils.teleport(entity, temp);
+                    }
+                }
+                entity.setGravity(false);
+                if (entity instanceof Player player) {
+                    PlayerUtils.setAllowFlight(player);
+                    player.setFlying(false);
+                }
+                Vector velocity = entity.getVelocity();
+                velocity.setY((entityYVel + adjustment) / OMG_MAGICAL_DRAG_CONSTANT);
+                entity.setVelocity(velocity);
             }
-            entity.setGravity(false);
-            if (entity instanceof Player player) {
-                PlayerUtils.setAllowFlight(player);
-                player.setFlying(false);
-            }
-            Vector velocity = entity.getVelocity();
-            velocity.setY(entityYVel);
-            entity.setVelocity(velocity);
-        }
+        });
         cabin.shift(delta);
     }
 
@@ -653,6 +721,7 @@ public class ElevatorController {
             blockDisplay.setBrightness(new Display.Brightness(15, 15));
             blockDisplay.setGlowing(true);
         });
+        Elevator.mustCleanup.add(display);
         Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, display::remove, 10 * 20);
     }
     
@@ -676,6 +745,7 @@ public class ElevatorController {
         private static final NamespacedKey DATA_VERSION_KEY = key("data_version");
         private static final int DATA_VERSION = 1;
         private static final NamespacedKey CABIN_KEY = key("cabin");
+        private static final NamespacedKey FLOOR_NAMES_KEY = key("floor_names");
 
         @NotNull
         @Override
@@ -700,6 +770,11 @@ public class ElevatorController {
                     (int) cabin.getMaxX(), (int) cabin.getMaxY(), (int) cabin.getMaxZ()
             };
             container.set(CABIN_KEY, INTEGER_ARRAY, cabinCoords);
+            if (!complex.floorNameOverrides.isEmpty()) {
+                var floorNames = context.newPersistentDataContainer();
+                complex.floorNameOverrides.forEach((y, name) -> floorNames.set(key(Integer.toString(y)), STRING, name));
+                container.set(FLOOR_NAMES_KEY, TAG_CONTAINER, floorNames);
+            }
             return container;
         }
 
@@ -709,16 +784,23 @@ public class ElevatorController {
             int dataVersion = primitive.get(DATA_VERSION_KEY, INTEGER);
 
             return switch (dataVersion) {
-                case DATA_VERSION -> {
+                case 1 -> {
                     int[] cabinCoords = primitive.get(CABIN_KEY, INTEGER_ARRAY);
                     BoundingBox box = new BoundingBox(cabinCoords[0], cabinCoords[1], cabinCoords[2], cabinCoords[3], cabinCoords[4], cabinCoords[5]);
-                    yield new ElevatorController(box);
+                    var controller = new ElevatorController(box);
+
+
+                    var floorNames = primitive.get(FLOOR_NAMES_KEY, TAG_CONTAINER);
+                    if (floorNames != null) {
+                        for (NamespacedKey key : floorNames.getKeys()) {
+                            int y = Integer.parseInt(key.getKey());
+                            controller.floorNameOverrides.put(y, floorNames.get(key, STRING));
+                        }
+                    }
+                    yield controller;
                 }
                 default -> throw new IllegalArgumentException("Invalid data version " + dataVersion);
             };
-
-//            ElevatorController controller = new ElevatorController();
-//            return null;
         }
     }
 }

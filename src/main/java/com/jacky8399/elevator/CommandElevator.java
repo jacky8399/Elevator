@@ -81,12 +81,12 @@ public class CommandElevator implements TabExecutor {
                     return true;
                 var cache = ElevatorManager.playerElevatorCache.get(player);
                 if (cache == null) {
-                    player.sendMessage(ChatColor.RED + "You are not in an elevator!");
+                    player.sendMessage(Config.msgErrorNotInElevator);
                     return true;
                 }
                 ElevatorController controller = cache.controller();
                 controller.maintenance = !controller.maintenance;
-                player.sendMessage("Set maintenance mode to " + controller.maintenance);
+                player.sendMessage(controller.maintenance ? Config.msgBeginMaintenance : Config.msgEndMaintenance);
             }
             case "up" -> {
                 if (!checkPermission(player, "command.up"))
@@ -115,7 +115,7 @@ public class CommandElevator implements TabExecutor {
                     return true;
                 var cache = ElevatorManager.playerElevatorCache.get(player);
                 if (cache == null) {
-                    player.sendMessage(ChatColor.RED + "You are not in an elevator!");
+                    player.sendMessage(Config.msgErrorNotInElevator);
                     return true;
                 }
                 ElevatorController controller = cache.controller();
@@ -127,6 +127,12 @@ public class CommandElevator implements TabExecutor {
                             .replace("{name}", floor.name()).replace("{y}", String.valueOf(floor.y())));
                 }
             }
+            case "redefine" -> {
+                if (!checkPermission(player, "command.redefine"))
+                    return true;
+                player.sendMessage(ChatColor.GREEN + "Click first location");
+                ElevatorManager.playerEditingElevator.put(player, null);
+            }
         }
 
         return true;
@@ -137,7 +143,7 @@ public class CommandElevator implements TabExecutor {
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         return switch (args.length) {
             default -> List.of();
-            case 1 -> List.of("givecontroller", "up", "down", "scan");
+            case 1 -> List.of("givecontroller", "up", "down", "scan", "maintenance", "resize");
         };
     }
 }

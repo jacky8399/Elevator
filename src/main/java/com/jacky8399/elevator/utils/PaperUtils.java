@@ -13,6 +13,8 @@ public class PaperUtils {
                     TeleportFlag.EntityState.RETAIN_PASSENGERS,
                     TeleportFlag.Relative.X, TeleportFlag.Relative.Z,
                     TeleportFlag.Relative.YAW, TeleportFlag.Relative.PITCH);
+        } else {
+            entity.teleport(location);
         }
     }
 }

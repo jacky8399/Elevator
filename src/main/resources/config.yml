@@ -1,4 +1,6 @@
 messages:
+  error-not-in-elevator: '&4You are not in an elevator!'
+
   no-floors: '&cNo floors found. Use &e/elevator scan&c to scan for floors.'
   current-floor: '&cCrouch: {down}&8 | &aCurrent: {current}&8 | &bJump: {up}'
   floor: '&c▼ {down}&8 | &aSelected: {current}&7 (jump or crouch to go)&8 | &b▲ {up}'
@@ -9,6 +11,19 @@ messages:
   #  default-floor-name: '{floorMinusOne}/F'
   default-ground-floor-name: '1/F'
   default-floor-name: '{floor}/F'
+
+  enter-floor-name: '&aEnter new floor name\n&9Current floor name: &e{floorName}&7 (Enter to cancel editing)'
+
+  begin-maintenance: '&cThe elevator is now in maintenance.'
+  end-maintenance: '&cThe elevator is no longer in maintenance.'
+
+  edit-cabin:
+    instructions: '&3Right click with a &aSlime Ball&3 to edit the cabin position.'
+    pos1: '&2Right click the &efirst position&2 with a &aSlime Ball&2.'
+    pos2: '&2Right click the &esecond position&2 with a &aSlime Ball&3'
+    success: '&aThe cabin position has been updated.'
+    failed: '&cThe cabin position was not updated.'
+
   cooldown: '&cStopping for {cooldown} seconds'
   maintenance: '&cThis elevator is in maintenance.'
 

@@ -3,8 +3,10 @@ package com.jacky8399.elevator;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.World;
+import org.bukkit.entity.Display;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.*;
 import java.util.logging.Logger;
 
 public final class Elevator extends JavaPlugin {
@@ -13,6 +15,9 @@ public final class Elevator extends JavaPlugin {
 
     public static Logger LOGGER;
 
+
+    public static Set<List<ElevatorBlock>> mustCleanupList = new HashSet<>();
+    public static Set<Display> mustCleanup = Collections.newSetFromMap(new WeakHashMap<>());
 
     @Override
     public void onEnable() {
@@ -45,6 +50,16 @@ public final class Elevator extends JavaPlugin {
         ElevatorManager.elevators.clear();
         ElevatorManager.playerElevatorCache.clear();
         ElevatorManager.managedDoors.clear();
+        for (List<ElevatorBlock> elevatorBlocks : mustCleanupList) {
+            for (ElevatorBlock block : elevatorBlocks) {
+                block.remove();
+            }
+        }
+        mustCleanupList.clear();
+        for (Display display : mustCleanup) {
+            display.remove();
+        }
+        mustCleanup.clear();
     }
 
     @Override
