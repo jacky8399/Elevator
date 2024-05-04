@@ -1,10 +1,19 @@
 package com.jacky8399.elevator.utils;
 
+import com.jacky8399.elevator.Elevator;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.entity.BlockDisplay;
+import org.bukkit.entity.Display;
+import org.bukkit.entity.Player;
 import org.bukkit.util.*;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
+
+import java.util.Collection;
 
 public class BlockUtils {
     public static float getLowestPoint(Block block) {
@@ -72,5 +81,18 @@ public class BlockUtils {
             }
         }
 
+    }
+
+    public static BlockDisplay createOutline(World world, BoundingBox cabin, BlockData data, Collection<Player> players) {
+        return world.spawn(cabin.getMin().toLocation(world).add(0.05, 0.05, 0.05), BlockDisplay.class, blockDisplay -> {
+            blockDisplay.setVisibleByDefault(false);
+            players.forEach(player -> player.showEntity(Elevator.INSTANCE, blockDisplay));
+
+            blockDisplay.setBlock(data);
+            var scale = new Vector3f((float) cabin.getWidthX() - 0.1f, (float) cabin.getHeight() - 0.1f, (float) cabin.getWidthZ() - 0.1f);
+            blockDisplay.setTransformation(new Transformation(new Vector3f(), new Quaternionf(), scale, new Quaternionf()));
+            blockDisplay.setBrightness(new Display.Brightness(15, 15));
+            blockDisplay.setGlowing(true);
+        });
     }
 }

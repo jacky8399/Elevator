@@ -1,6 +1,5 @@
 package com.jacky8399.elevator;
 
-import com.jacky8399.elevator.utils.BlockUtils;
 import com.jacky8399.elevator.utils.ItemUtils;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
@@ -122,6 +121,7 @@ public class Events implements Listener {
                 } else {
                     BoundingBox bb = BoundingBox.of(firstPos.getBlock(), block);
                     editingController.cabin.resize(bb.getMinX(), bb.getMinY(), bb.getMinZ(), bb.getMaxX(), bb.getMaxY(), bb.getMaxZ());
+                    editingController.scanFloors();
                     editingController.showOutline(List.of(player));
                     player.sendMessage(Config.msgEditCabinSuccess);
                     ElevatorManager.playerEditingElevator.remove(player);
@@ -155,7 +155,7 @@ public class Events implements Listener {
         Chunk chunk = e.getChunk();
         for (BlockState state : chunk.getTileEntities()) {
             Block block = state.getBlock();
-            ElevatorController controller = ElevatorManager.elevators.remove(BlockUtils.toVector(block));
+            ElevatorController controller = ElevatorManager.elevators.remove(block);
             if (controller != null) {
                 controller.save();
                 ElevatorManager.removeElevator(controller);

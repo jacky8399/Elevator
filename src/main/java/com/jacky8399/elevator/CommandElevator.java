@@ -1,14 +1,17 @@
 package com.jacky8399.elevator;
 
 import com.jacky8399.elevator.utils.ItemUtils;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
 import org.bukkit.entity.Player;
+import org.bukkit.util.StringUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class CommandElevator implements TabExecutor {
@@ -127,12 +130,19 @@ public class CommandElevator implements TabExecutor {
                             .replace("{name}", floor.name()).replace("{y}", String.valueOf(floor.y())));
                 }
             }
-            case "redefine" -> {
-                if (!checkPermission(player, "command.redefine"))
+            case "fixgravity" -> {
+                if (!checkPermission(player, "command.fixgravity"))
                     return true;
-                player.sendMessage(ChatColor.GREEN + "Click first location");
-                ElevatorManager.playerEditingElevator.put(player, null);
+                if (args.length == 2) {
+                    var entities = Bukkit.selectEntities(player, args[1]);
+                    for (var entity : entities) {
+                        entity.setGravity(true);
+                    }
+                } else {
+                    player.setGravity(true);
+                }
             }
+            default -> player.sendMessage(ChatColor.RED + "Unknown command " + args[0]);
         }
 
         return true;
@@ -141,9 +151,10 @@ public class CommandElevator implements TabExecutor {
     @Nullable
     @Override
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
-        return switch (args.length) {
+        List<String> strings = switch (args.length) {
             default -> List.of();
             case 1 -> List.of("givecontroller", "up", "down", "scan", "maintenance", "resize");
         };
+        return StringUtil.copyPartialMatches(args[args.length - 1], strings, new ArrayList<>());
     }
 }
