@@ -1,6 +1,7 @@
 package com.jacky8399.elevator;
 
 import com.jacky8399.elevator.utils.BlockUtils;
+import com.jacky8399.elevator.utils.MathUtils;
 import com.jacky8399.elevator.utils.PaperUtils;
 import com.jacky8399.elevator.utils.PlayerUtils;
 import org.bukkit.*;
@@ -14,7 +15,10 @@ import org.bukkit.block.data.Directional;
 import org.bukkit.block.data.type.Door;
 import org.bukkit.block.data.type.TrapDoor;
 import org.bukkit.block.sign.Side;
-import org.bukkit.entity.*;
+import org.bukkit.entity.BlockDisplay;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataAdapterContext;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -33,6 +37,7 @@ import java.util.logging.Level;
 public class ElevatorController {
     public static final Material MATERIAL = Material.DROPPER;
     public static final double OMG_MAGICAL_DRAG_CONSTANT = 0.9800000190734863D;
+    public static final int TRANSFORMATION_INTERVAL = 30;
 
     @NotNull
     World world;
@@ -143,6 +148,7 @@ public class ElevatorController {
         var toBreakNonSolid = new ArrayList<Block>();
 
         // offset Y by 2 tick since interpolation also begins in 2 tick
+        float yPadding = (float) (velocity.getY() / 20 * 2);
         Block baseBlock = world.getBlockAt((int) cabin.getMinX(), (int) Math.round(cabin.getMinY()), (int) cabin.getMinZ());
         for (int j = minY; j < maxY; j++) {
             boolean isFloor = j == minY;
@@ -154,7 +160,7 @@ public class ElevatorController {
                     if (block.equals(controller) || type == Material.AIR || block.getState() instanceof TileState)
                         continue;
 
-                    ElevatorBlock elevatorBlock = ElevatorBlock.spawnFor(world, baseBlock, block, block.getLocation().add(0, (float) (velocity.getY() / 20 * 2), 0));
+                    ElevatorBlock elevatorBlock = ElevatorBlock.spawnFor(world, baseBlock, block, block.getLocation().add(0, yPadding, 0));
                     movingBlocks.add(elevatorBlock);
 
                     if (false) {
@@ -185,21 +191,75 @@ public class ElevatorController {
             }
         });
 
-        int breakpoints = 30;
-        Transformation movingDisplayTransformation =
-                new Transformation(new Vector3f(0, (float) (velocity.getY() / 20 * (movementTime - 2)), 0),
-                        new Quaternionf(), new Vector3f(1, 1, 1), new Quaternionf());
+        // to ensure that the display entities don't go out of tracking range
+        int yDiff = movementTime * speed / 20;
+        if (false && yDiff <= TRANSFORMATION_INTERVAL) {
+            Transformation movingDisplayTransformation =
+                    new Transformation(new Vector3f(0, (float) (velocity.getY() / 20), 0),
+                            new Quaternionf(), new Vector3f(1, 1, 1), new Quaternionf());
 
-        Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
-            for (ElevatorBlock elevatorBlock : movingBlocks) {
-                var display = elevatorBlock.display();
-                if (display != null) {
+            Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
+                ElevatorBlock.forEachDisplay(movingBlocks, display -> {
                     display.setInterpolationDelay(0);
                     display.setInterpolationDuration(movementTime);
                     display.setTransformation(movingDisplayTransformation);
+                });
+            }, 2);
+        } else {
+            boolean down = velocity.getBlockY() < 0;
+            int ticksPerInterval = 20 * TRANSFORMATION_INTERVAL / speed;
+            var scheduler = Bukkit.getScheduler();
+            Transformation movingTransformation = new Transformation(new Vector3f(0, down ? -TRANSFORMATION_INTERVAL : TRANSFORMATION_INTERVAL, 0),
+                    new Quaternionf(), new Vector3f(1), new Quaternionf());
+            int points = yDiff / TRANSFORMATION_INTERVAL;
+            for (int i = 0; i <= points; i++) {
+                long delay = ticksPerInterval * (long) i; // WHY IS DELAY A LONG????
+                if (i != 0) {
+                    boolean resetTransformation = i == points;
+                    // teleport first
+                    scheduler.runTaskLater(Elevator.INSTANCE, () -> {
+                        if (Config.debug)
+                            debug("Interpolation TP (reset: " + resetTransformation + ")");
+                        Location location = new Location(null, 0, 0, 0);
+                        ElevatorBlock.forEachDisplay(movingBlocks, display -> {
+                                display.teleport(
+                                            display.getLocation(location).add(0, down ? -TRANSFORMATION_INTERVAL : TRANSFORMATION_INTERVAL, 0));
+                                world.spawnParticle(Particle.BLOCK_MARKER, location, 0, Material.BARRIER.createBlockData());
+                                if (resetTransformation) {
+                                    display.setInterpolationDuration(0);
+                                    display.setTransformation(MathUtils.DEFAULT_TRANSFORMATION);
+                                }
+                            }
+                        );
+                    }, delay + (resetTransformation ? 0 : 2));
+                }
+                if (i != points) {
+                    scheduler.runTaskLater(Elevator.INSTANCE, () -> {
+                        if (Config.debug)
+                            debug("Interpolation Frame");
+                        ElevatorBlock.forEachDisplay(movingBlocks, display -> {
+                            display.setInterpolationDelay(0);
+                            display.setInterpolationDuration(ticksPerInterval);
+                            display.setTransformation(movingTransformation);
+                        });
+                    }, delay + 2);
+                } else {
+                    int finalDistance = (down ? -1 : 1) * yDiff % TRANSFORMATION_INTERVAL;
+                    Transformation finalTransformation = new Transformation(new Vector3f(0, finalDistance, 0),
+                            new Quaternionf(), new Vector3f(1), new Quaternionf());
+                    int duration = movementTime - ticksPerInterval * points;
+                    scheduler.runTaskLater(Elevator.INSTANCE, () -> {
+                        if (Config.debug)
+                            debug("Final stretch: %d blocks for %d ticks".formatted(finalDistance, duration));
+                        ElevatorBlock.forEachDisplay(movingBlocks, display -> {
+                            display.setInterpolationDelay(0);
+                            display.setInterpolationDuration(duration);
+                            display.setTransformation(finalTransformation);
+                        });
+                    }, delay + 2);
                 }
             }
-        }, 2);
+        }
 
         moving = true;
     }
@@ -221,6 +281,8 @@ public class ElevatorController {
         for (ElevatorBlock block : movingBlocks) {
             if (block.display() != null) {
 //                block.stand().getLocation(location);
+                block.display().setTransformation(new Transformation(new Vector3f(), new Quaternionf(), new Vector3f(1), new Quaternionf()));
+
                 baseBlock.getLocation(location);
                 location.add(block.pos().x(), block.pos().y(), block.pos().z());
                 // I love floating point errors
@@ -503,16 +565,15 @@ public class ElevatorController {
 
 
     private static final int DEFAULT_SPEED = 5;
-    private static final int TIME_MULTIPLIER = 20 / DEFAULT_SPEED;
     private void moveTo(int y) {
         int yDiff = y - (int) cabin.getMinY();
         if (yDiff == 0 || moving)
             return;
         if (Config.debug)
             debug("Moving to " + y + " (" + yDiff + " blocks)");
-        velocity = new Vector(0, yDiff > 0 ? DEFAULT_SPEED : -DEFAULT_SPEED, 0);
+        velocity = new Vector(0, yDiff > 0 ? speed : -speed, 0);
         movementStartTick = world.getGameTime();
-        movementTime = Math.abs(yDiff) * TIME_MULTIPLIER;
+        movementTime = Math.abs(yDiff) * 20 / speed;
         movementEndTick = movementStartTick + movementTime;
 
         mobilize();
@@ -655,7 +716,7 @@ public class ElevatorController {
         Bukkit.getScheduler().runTask(Elevator.INSTANCE, () -> {
 
 //        if (doTeleport) {
-            double deltaY = velocity.getY() / 20d;
+//            double deltaY = velocity.getY() / 20d;
 //            for (ElevatorBlock block : movingBlocks) {
 //                PaperUtils.teleport(block.stand(), block.stand().getLocation(temp).add(0, deltaY, 0));
 //            }
@@ -674,24 +735,26 @@ public class ElevatorController {
                     continue;
                 }
 
+                Vector velocity = entity.getVelocity();
                 if (doTeleport) {
                     // force synchronize location
                     entity.getLocation(temp);
-                    if (Config.debug) {
-                        debug("Player: %s, offset: %.2f, expected Y: %.4f, actual Y: %.4f".formatted(entity.getName(), offset, cabinMinY + offset, temp.getY()));
-                    }
-                    if (Math.abs(cabinMinY + offset - temp.getY()) > 0.5) {
-                        temp.setY(cabinMinY + offset);
+                    temp.setY(cabinMinY + offset + velocity.getY());
+                    if (Math.abs(cabinMinY + offset - (temp.getY() + velocity.getY())) > 0.5) {
+                        if (Config.debug) {
+                            debug("Player: %s, offset: %.2f, expected Y: %.4f, actual Y: %.4f".formatted(
+                                    entity.getName(), offset, cabinMinY + offset, temp.getY() + velocity.getY()));
+                        }
                         PaperUtils.teleport(entity, temp);
                     }
+                    world.spawnParticle(Particle.CRIT, temp, 0);
                 }
                 entity.setGravity(false);
                 if (entity instanceof Player player) {
                     PlayerUtils.setAllowFlight(player);
                     player.setFlying(false);
                 }
-                Vector velocity = entity.getVelocity();
-                velocity.setY(entityYVel / OMG_MAGICAL_DRAG_CONSTANT);
+                velocity.setY(entityYVel);
                 entity.setVelocity(velocity);
             }
         });

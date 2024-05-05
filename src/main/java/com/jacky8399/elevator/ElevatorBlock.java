@@ -8,6 +8,8 @@ import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Shulker;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.function.Consumer;
+
 public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, @Nullable Shulker collision) {
 
     public static ElevatorBlock spawnFor(World world, Block base, Block block, Location displayEntityLocation) {
@@ -19,6 +21,7 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, @Nulla
 
         BlockDisplay display = world.spawn(displayEntityLocation, BlockDisplay.class, e -> {
             e.setBlock(data);
+            e.setTeleportDuration(0);
         });
 
         Shulker shulker;
@@ -56,6 +59,13 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, @Nulla
         if (display != null)
             display.remove();
 //        stand.remove();
+    }
+
+    public static void forEachDisplay(Iterable<ElevatorBlock> iterable, Consumer<BlockDisplay> displayConsumer) {
+        for (ElevatorBlock block : iterable) {
+            if (block.display != null)
+                displayConsumer.accept(block.display);
+        }
     }
 
 //    private static Entity spawnBase(World world, Location location) {
