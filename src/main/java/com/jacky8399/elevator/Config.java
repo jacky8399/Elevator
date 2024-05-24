@@ -43,6 +43,8 @@ public class Config {
 
     public static int elevatorCooldown;
 
+    public static int elevatorMaxHeight;
+
     public static Material elevatorFloorBlock;
     public static Material elevatorScannerBlock;
     public static boolean elevatorScannerDirectional;
@@ -77,7 +79,11 @@ public class Config {
         msgEditCabinSuccess = getColorString(editCabinMessages, "success");
         msgEditCabinFailed = getColorString(editCabinMessages, "failed");
 
+        ConfigurationSection elevator = config.getConfigurationSection("elevator");
+
         elevatorCooldown = config.getInt("elevator.cooldown");
+
+        elevatorMaxHeight = elevator.getInt("max-height");
 
         elevatorFloorBlock = getBlock(config, "elevator.scanner.floor-block");
         elevatorScannerBlock = getBlock(config, "elevator.scanner.scanner-block");

@@ -44,7 +44,7 @@ public final class Elevator extends JavaPlugin {
     @Override
     public void onDisable() {
         for (ElevatorController controller : ElevatorManager.elevators.values()) {
-            controller.immobilize();
+            controller.cleanUp();
             controller.save();
         }
         ElevatorManager.elevators.clear();

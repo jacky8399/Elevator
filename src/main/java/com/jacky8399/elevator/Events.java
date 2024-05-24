@@ -157,6 +157,7 @@ public class Events implements Listener {
             Block block = state.getBlock();
             ElevatorController controller = ElevatorManager.elevators.remove(block);
             if (controller != null) {
+                controller.cleanUp();
                 controller.save();
                 ElevatorManager.removeElevator(controller);
             }

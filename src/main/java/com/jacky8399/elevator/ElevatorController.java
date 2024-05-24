@@ -51,7 +51,7 @@ public class ElevatorController {
     boolean moving;
     List<ElevatorBlock> movingBlocks;
 
-    List<BlockDisplay> chains = new ArrayList<>();
+    ArrayList<BlockDisplay> ropeEntities = new ArrayList<>();
 
     /** cabin entities and their Y offset relative to the cabin */
     Map<LivingEntity, Double> cabinEntities;
@@ -224,7 +224,7 @@ public class ElevatorController {
                         ElevatorBlock.forEachDisplay(movingBlocks, display -> {
                                 display.teleport(
                                             display.getLocation(location).add(0, down ? -TRANSFORMATION_INTERVAL : TRANSFORMATION_INTERVAL, 0));
-                                world.spawnParticle(Particle.BLOCK_MARKER, location, 0, Material.BARRIER.createBlockData());
+//                                world.spawnParticle(Particle.BLOCK_MARKER, location, 0, Material.BARRIER.createBlockData());
                                 if (resetTransformation) {
                                     display.setInterpolationDuration(0);
                                     display.setTransformation(MathUtils.DEFAULT_TRANSFORMATION);
@@ -330,6 +330,8 @@ public class ElevatorController {
 
         velocity = null;
         moving = false;
+
+        refreshRope();
     }
 
     private void setNearbyDoors(boolean state) {
@@ -397,12 +399,20 @@ public class ElevatorController {
             controller.controller = block;
             controller.world = block.getWorld();
             controller.scanFloors();
+            controller.refreshRope();
             return controller;
         } catch (Exception ex) {
-            Elevator.LOGGER.severe("Failed to load ElevatorController: " + ex);
-            ex.printStackTrace();
+            Elevator.LOGGER.log(Level.SEVERE, "Failed to load ElevatorController: ", ex);
             return null;
         }
+    }
+
+    public void cleanUp() {
+        immobilize();
+        for (BlockDisplay blockDisplay : ropeEntities) {
+            blockDisplay.remove();
+        }
+        ropeEntities.clear();
     }
 
     public void scanFloors() {
@@ -589,7 +599,7 @@ public class ElevatorController {
             return;
         }
         if (controller.getType() != MATERIAL) {
-            immobilize();
+            cleanUp();
             ElevatorManager.removeElevator(this); // don't save
             return;
         }
@@ -747,7 +757,7 @@ public class ElevatorController {
                         }
                         PaperUtils.teleport(entity, temp);
                     }
-                    world.spawnParticle(Particle.CRIT, temp, 0);
+//                    world.spawnParticle(Particle.CRIT, temp, 0);
                 }
                 entity.setGravity(false);
                 if (entity instanceof Player player) {
@@ -759,12 +769,41 @@ public class ElevatorController {
             }
         });
         cabin.shift(delta);
-        world.spawnParticle(Particle.COMPOSTER, cabin.getMinX(), cabin.getMinY(), cabin.getMinZ(), 1);
-        world.spawnParticle(Particle.COMPOSTER, cabin.getMaxX(), cabin.getMaxY(), cabin.getMaxZ(), 1);
+//        world.spawnParticle(Particle.COMPOSTER, cabin.getMinX(), cabin.getMinY(), cabin.getMinZ(), 1);
+//        world.spawnParticle(Particle.COMPOSTER, cabin.getMaxX(), cabin.getMaxY(), cabin.getMaxZ(), 1);
+
+        refreshRope();
     }
 
-    void refreshChains() {
-
+    void refreshRope() {
+        int ropeLength = (int) (controller.getY() - cabin.getMaxY()) + 1;
+        int currentLength = ropeEntities.size();
+        if (ropeLength > currentLength) {
+            // spawn more
+            ropeEntities.ensureCapacity(ropeLength);
+            BlockData blockData = Material.OAK_FENCE.createBlockData();
+            for (int i = currentLength + 1; i <= ropeLength; i++) {
+                ropeEntities.add(world.spawn(controller.getLocation().add(0, -i, 0), BlockDisplay.class, display -> {
+                    display.setBlock(blockData);
+                    display.setInterpolationDuration(1);
+                }));
+            }
+        } else if (ropeLength < currentLength) {
+            // remove excess
+            List<BlockDisplay> subList = ropeEntities.subList(ropeLength, currentLength);
+            for (BlockDisplay display : subList) {
+                display.remove();
+            }
+            subList.clear();
+        }
+        // finally adjust the position of the last chain
+        if (ropeLength != 0) {
+            double height = (controller.getY() - cabin.getMaxY()) % 1d;
+            BlockDisplay blockDisplay = ropeEntities.get(ropeLength - 1);
+            blockDisplay.setTransformation(new Transformation(
+                    new Vector3f(0, (float) (1 - height) + 0.1f, 0), new Quaternionf(), new Vector3f(1), new Quaternionf()
+            ));
+        }
     }
 
     void showOutline(Collection<Player> players) {

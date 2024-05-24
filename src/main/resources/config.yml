@@ -35,6 +35,8 @@ messages:
 elevator:
   # The cooldown in ticks
   cooldown: 60
+  # How tall elevators can be
+  max-height: 96
 
   # The floor scanner.
   scanner:
