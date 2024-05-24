@@ -20,7 +20,9 @@ public class Config {
 
     public static String msgNoFloors;
     public static String msgCurrentFloor;
+    public static String msgCurrentFloorTemplate;
     public static String msgFloor;
+    public static String msgFloorTemplate;
     public static String msgNoFloor;
 
     public static String msgDefaultGroundFloorName;
@@ -59,7 +61,9 @@ public class Config {
         msgErrorNotInElevator = getColorString(config, "messages.error-not-in-elevator");
         msgNoFloors = getColorString(config, "messages.no-floors");
         msgCurrentFloor = getColorString(config, "messages.current-floor");
+        msgCurrentFloorTemplate = buildFloorMessageTemplate(msgCurrentFloor);
         msgFloor = getColorString(config, "messages.floor");
+        msgFloorTemplate = buildFloorMessageTemplate(msgFloor);
         msgNoFloor = getColorString(config, "messages.no-floor");
         msgDefaultGroundFloorName = getColorString(config, "messages.default-ground-floor-name");
         msgDefaultFloorName = getColorString(config, "messages.default-floor-name");
@@ -116,10 +120,36 @@ public class Config {
         return Objects.requireNonNull(Registry.MATERIAL.get(key), "Invalid block " + string);
     }
 
-    public static String getFloorMessage(String raw, @Nullable String lowerFloor, @Nullable String currentFloor, @Nullable String upperFloor) {
-        return raw.replace("{down}", lowerFloor != null ? lowerFloor : msgNoFloor)
-                .replace("{current}", currentFloor != null ? currentFloor : msgNoFloor)
-                .replace("{up}", upperFloor != null ? upperFloor : msgNoFloor);
+    private static String buildFloorMessageTemplate(String string) {
+        return string.replace("{down}", "\u0001")
+                .replace("{current}", "\u0002")
+                .replace("{up}", "\u0003");
+    }
+
+    public static String getFloorMessage(String template, @Nullable String lowerFloor, @Nullable String currentFloor, @Nullable String upperFloor) {
+        lowerFloor = lowerFloor != null ? lowerFloor : msgNoFloor;
+        currentFloor = currentFloor != null ? currentFloor : msgNoFloor;
+        upperFloor = upperFloor != null ? upperFloor : msgNoFloor;
+
+        StringBuilder sb = new StringBuilder(template);
+        for (int i = 0; i < sb.length(); i++) {
+            char chr = sb.charAt(i);
+            switch (chr) {
+                case 1 -> {
+                    sb.replace(i, i + 1, lowerFloor);
+                    i += lowerFloor.length() - 1;
+                }
+                case 2 -> {
+                    sb.replace(i, i + 1, currentFloor);
+                    i += currentFloor.length() - 1;
+                }
+                case 3 -> {
+                    sb.replace(i, i + 1, upperFloor);
+                    i += upperFloor.length() - 1;
+                }
+            }
+        }
+        return sb.toString();
     }
 
     public static String getDefaultFloorName(int floorIdx) {

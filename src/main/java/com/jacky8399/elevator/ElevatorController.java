@@ -4,6 +4,9 @@ import com.jacky8399.elevator.utils.BlockUtils;
 import com.jacky8399.elevator.utils.MathUtils;
 import com.jacky8399.elevator.utils.PaperUtils;
 import com.jacky8399.elevator.utils.PlayerUtils;
+import net.md_5.bungee.api.ChatMessageType;
+import net.md_5.bungee.api.chat.BaseComponent;
+import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -85,26 +88,26 @@ public class ElevatorController {
 
 //    private static final Vector BOUNDING_BOX_EPSILON = new Vector(0.05, 0.05, 0.05);
     private Collection<Entity> scanCabinEntities() {
-        return world.getNearbyEntities(cabin, e -> {
-            if (!(e instanceof LivingEntity))
-                return false;
-            // shrink entity hitbox for leniency
-            BoundingBox box = e.getBoundingBox().expand(-0.05, -0.05, -0.05);
-            // ensure that the half of the bounding box is inside the cabin
-            return cabin.contains(box.getCenter()) && (cabin.contains(box.getMin()) || cabin.contains(box.getMax()));
+        BoundingBox lenientBox = cabin.clone().expand(0.1, 0.1, 0.1);
+        return world.getNearbyEntities(lenientBox, e -> {
+            return e instanceof LivingEntity;
+//            if (!(e instanceof LivingEntity))
+//                return false;
+//            // shrink entity hitbox for leniency
+//            BoundingBox box = e.getBoundingBox().expand(-0.05, -0.05, -0.05);
+//            // ensure that the half of the bounding box is inside the cabin
+//            return cabin.contains(box.getCenter()) && (cabin.contains(box.getMin()) || cabin.contains(box.getMax()));
         });
     }
 
     private Collection<Player> scanCabinPlayers() {
-        // noinspection unchecked,rawtypes
-        return (Collection) world.getNearbyEntities(cabin, e -> {
-            if (!(e instanceof Player))
-                return false;
-            // shrink entity hitbox for leniency
-            BoundingBox box = e.getBoundingBox().expand(-0.05, -0.05, -0.05);
-            // ensure that the full bounding box is inside the cabin
-            return cabin.contains(box.getCenter()) && (cabin.contains(box.getMin()) || cabin.contains(box.getMax()));
-        });
+        BoundingBox lenientBox = cabin.clone().expand(0.1, 0.1, 0.1);
+        var players = new ArrayList<Player>();
+        for (var player : Bukkit.getOnlinePlayers()) {
+            if (lenientBox.contains(player.getLocation().toVector()))
+                players.add(player);
+        }
+        return players;
     }
 
     public void mobilize() {
@@ -151,8 +154,6 @@ public class ElevatorController {
         float yPadding = (float) (velocity.getY() / 20 * 2);
         Block baseBlock = world.getBlockAt((int) cabin.getMinX(), (int) Math.round(cabin.getMinY()), (int) cabin.getMinZ());
         for (int j = minY; j < maxY; j++) {
-            boolean isFloor = j == minY;
-            boolean isCeiling = j == maxY - 1;
             for (int i = minX; i < maxX; i++) {
                 for (int k = minZ; k < maxZ; k++) {
                     Block block = world.getBlockAt(i, j, k);
@@ -162,18 +163,6 @@ public class ElevatorController {
 
                     ElevatorBlock elevatorBlock = ElevatorBlock.spawnFor(world, baseBlock, block, block.getLocation().add(0, yPadding, 0));
                     movingBlocks.add(elevatorBlock);
-
-                    if (false) {
-                        // special treatment for floors and ceilings
-                        if ((isFloor || isCeiling) && !type.isOccluding()) {
-                            Location location = block.getLocation();
-                            if (isFloor)
-                                location.add(0.5, BlockUtils.getHighestPoint(block) - 1, 0.5);
-                            else
-                                location.add(0.5, BlockUtils.getLowestPoint(block), 0.5);
-//                            movingBlocks.add(ElevatorBlock.spawnBorder(world, location));
-                        }
-                    }
 
                     if (type.isOccluding())
                         toBreak.add(block);
@@ -191,73 +180,60 @@ public class ElevatorController {
             }
         });
 
+        // teleport display entities every 30 blocks travelled
         // to ensure that the display entities don't go out of tracking range
         int yDiff = movementTime * speed / 20;
-        if (false && yDiff <= TRANSFORMATION_INTERVAL) {
-            Transformation movingDisplayTransformation =
-                    new Transformation(new Vector3f(0, (float) (velocity.getY() / 20), 0),
-                            new Quaternionf(), new Vector3f(1, 1, 1), new Quaternionf());
-
-            Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
-                ElevatorBlock.forEachDisplay(movingBlocks, display -> {
-                    display.setInterpolationDelay(0);
-                    display.setInterpolationDuration(movementTime);
-                    display.setTransformation(movingDisplayTransformation);
-                });
-            }, 2);
-        } else {
-            boolean down = velocity.getBlockY() < 0;
-            int ticksPerInterval = 20 * TRANSFORMATION_INTERVAL / speed;
-            var scheduler = Bukkit.getScheduler();
-            Transformation movingTransformation = new Transformation(new Vector3f(0, down ? -TRANSFORMATION_INTERVAL : TRANSFORMATION_INTERVAL, 0),
-                    new Quaternionf(), new Vector3f(1), new Quaternionf());
-            int points = yDiff / TRANSFORMATION_INTERVAL;
-            for (int i = 0; i <= points; i++) {
-                long delay = ticksPerInterval * (long) i; // WHY IS DELAY A LONG????
-                if (i != 0) {
-                    boolean resetTransformation = i == points;
-                    // teleport first
-                    scheduler.runTaskLater(Elevator.INSTANCE, () -> {
-                        if (Config.debug)
-                            debug("Interpolation TP (reset: " + resetTransformation + ")");
-                        Location location = new Location(null, 0, 0, 0);
-                        ElevatorBlock.forEachDisplay(movingBlocks, display -> {
-                                display.teleport(
-                                            display.getLocation(location).add(0, down ? -TRANSFORMATION_INTERVAL : TRANSFORMATION_INTERVAL, 0));
+        boolean down = velocity.getBlockY() < 0;
+        int ticksPerInterval = 20 * TRANSFORMATION_INTERVAL / speed;
+        var scheduler = Bukkit.getScheduler();
+        Transformation movingTransformation = new Transformation(new Vector3f(0, down ? -TRANSFORMATION_INTERVAL : TRANSFORMATION_INTERVAL, 0),
+                new Quaternionf(), new Vector3f(1), new Quaternionf());
+        int points = yDiff / TRANSFORMATION_INTERVAL;
+        for (int i = 0; i <= points; i++) {
+            long delay = ticksPerInterval * (long) i; // WHY IS DELAY A LONG????
+            if (i != 0) {
+                boolean resetTransformation = i == points;
+                // teleport first
+                scheduler.runTaskLater(Elevator.INSTANCE, () -> {
+                    if (Config.debug)
+                        debug("Interpolation TP (reset: " + resetTransformation + ")");
+                    Location location = new Location(null, 0, 0, 0);
+                    ElevatorBlock.forEachDisplay(movingBlocks, display -> {
+                            display.teleport(
+                                        display.getLocation(location).add(0, down ? -TRANSFORMATION_INTERVAL : TRANSFORMATION_INTERVAL, 0));
 //                                world.spawnParticle(Particle.BLOCK_MARKER, location, 0, Material.BARRIER.createBlockData());
-                                if (resetTransformation) {
-                                    display.setInterpolationDuration(0);
-                                    display.setTransformation(MathUtils.DEFAULT_TRANSFORMATION);
-                                }
+                            if (resetTransformation) {
+                                display.setInterpolationDuration(0);
+                                display.setTransformation(MathUtils.DEFAULT_TRANSFORMATION);
                             }
-                        );
-                    }, delay + (resetTransformation ? 0 : 2));
-                }
-                if (i != points) {
-                    scheduler.runTaskLater(Elevator.INSTANCE, () -> {
-                        if (Config.debug)
-                            debug("Interpolation Frame");
-                        ElevatorBlock.forEachDisplay(movingBlocks, display -> {
-                            display.setInterpolationDelay(0);
-                            display.setInterpolationDuration(ticksPerInterval);
-                            display.setTransformation(movingTransformation);
-                        });
-                    }, delay + 2);
-                } else {
-                    int finalDistance = (down ? -1 : 1) * yDiff % TRANSFORMATION_INTERVAL;
-                    Transformation finalTransformation = new Transformation(new Vector3f(0, finalDistance, 0),
-                            new Quaternionf(), new Vector3f(1), new Quaternionf());
-                    int duration = movementTime - ticksPerInterval * points;
-                    scheduler.runTaskLater(Elevator.INSTANCE, () -> {
-                        if (Config.debug)
-                            debug("Final stretch: %d blocks for %d ticks".formatted(finalDistance, duration));
-                        ElevatorBlock.forEachDisplay(movingBlocks, display -> {
-                            display.setInterpolationDelay(0);
-                            display.setInterpolationDuration(duration);
-                            display.setTransformation(finalTransformation);
-                        });
-                    }, delay + 2);
-                }
+                        }
+                    );
+                }, delay + (resetTransformation ? 0 : 2));
+            }
+            if (i != points) {
+                scheduler.runTaskLater(Elevator.INSTANCE, () -> {
+                    if (Config.debug)
+                        debug("Interpolation Frame");
+                    ElevatorBlock.forEachDisplay(movingBlocks, display -> {
+                        display.setInterpolationDelay(0);
+                        display.setInterpolationDuration(ticksPerInterval);
+                        display.setTransformation(movingTransformation);
+                    });
+                }, delay + 2);
+            } else {
+                int finalDistance = (down ? -1 : 1) * yDiff % TRANSFORMATION_INTERVAL;
+                Transformation finalTransformation = new Transformation(new Vector3f(0, finalDistance, 0),
+                        new Quaternionf(), new Vector3f(1), new Quaternionf());
+                int duration = movementTime - ticksPerInterval * points;
+                scheduler.runTaskLater(Elevator.INSTANCE, () -> {
+                    if (Config.debug)
+                        debug("Final stretch: %d blocks for %d ticks".formatted(finalDistance, duration));
+                    ElevatorBlock.forEachDisplay(movingBlocks, display -> {
+                        display.setInterpolationDelay(0);
+                        display.setInterpolationDuration(duration);
+                        display.setTransformation(finalTransformation);
+                    });
+                }, delay + 2);
             }
         }
 
@@ -606,8 +582,11 @@ public class ElevatorController {
 
         if (maintenance) {
             if ((int) world.getGameTime() % 5 == 0) {
+                BaseComponent msgMaintenance = TextComponent.fromLegacy(Config.msgMaintenance);
                 for (Player player : scanCabinPlayers()) {
-                    player.sendActionBar(Config.msgMaintenance);
+                    // I love spigot
+                    player.spigot().sendMessage(ChatMessageType.ACTION_BAR, msgMaintenance);
+//                    player.sendActionBar(Config.msgMaintenance);
                 }
             }
             return;
@@ -625,8 +604,10 @@ public class ElevatorController {
             if (ticksSinceMovementEnd < Config.elevatorCooldown) {
                 String cooldownMsg = Config.msgCooldown.replace("{cooldown}",
                         String.valueOf((int) ((Config.elevatorCooldown - ticksSinceMovementEnd) / 20)));
+                BaseComponent cooldownComponent = TextComponent.fromLegacy(cooldownMsg);
                 for (Player player : scanCabinPlayers()) {
-                    player.sendActionBar(cooldownMsg);
+                    player.spigot().sendMessage(ChatMessageType.ACTION_BAR, cooldownComponent);
+//                    player.sendActionBar(cooldownMsg);
                 }
                 return;
             }
@@ -660,7 +641,7 @@ public class ElevatorController {
         for (Player player : players) {
             if (currentFloorIdx == -1 || floors.isEmpty()) {
                 ElevatorManager.playerElevatorCache.put(player, new ElevatorManager.PlayerElevator(this, 0));
-                player.sendActionBar(Config.msgNoFloors);
+//                player.sendActionBar(Config.msgNoFloors);
                 continue;
             }
 
@@ -674,7 +655,8 @@ public class ElevatorController {
             int floorIdx = currentFloorIdx;
 
             String rawMessage;
-            if (cache == null || cache.floorIdx() == currentFloorIdx) {
+            // TODO redo floor selection
+            if (true || cache == null || cache.floorIdx() == currentFloorIdx) {
                 if (jumping || player.isSneaking()) {
                     // move up or down a floor
                     int newFloor = currentFloorIdx + (jumping ? -1 : 1);
@@ -690,20 +672,20 @@ public class ElevatorController {
                 ElevatorManager.playerElevatorCache.put(player,
                         new ElevatorManager.PlayerElevator(this, floorIdx));
 
-                rawMessage = Config.msgCurrentFloor;
+                rawMessage = Config.msgCurrentFloorTemplate;
             } else {
-                floorIdx = cache.floorIdx();
-
-                ElevatorFloor floor = floorIdx >= 0 && floorIdx < floors.size() ? floors.get(floorIdx) : null;
-                if (floor != null && (jumping || player.isSneaking())) {
-                    // reset the selection
-                    ElevatorManager.playerElevatorCache.remove(player);
-
-                    currentFloorIdx = floorIdx;
-                    moveTo(floor.y);
-                }
-
-                rawMessage = Config.msgFloor;
+//                floorIdx = cache.floorIdx();
+//
+//                ElevatorFloor floor = floorIdx >= 0 && floorIdx < floors.size() ? floors.get(floorIdx) : null;
+//                if (floor != null && (jumping || player.isSneaking())) {
+//                    // reset the selection
+//                    ElevatorManager.playerElevatorCache.remove(player);
+//
+//                    currentFloorIdx = floorIdx;
+//                    moveTo(floor.y);
+//                }
+//
+//                rawMessage = Config.msgFloorTemplate;
             }
 
             String message = Config.getFloorMessage(rawMessage,
@@ -712,7 +694,9 @@ public class ElevatorController {
                     floorIdx != 0 ? floors.get(floorIdx - 1).name : null
             );
 
-            player.sendActionBar(message);
+            BaseComponent component = TextComponent.fromLegacy(message);
+//            player.sendActionBar(message);
+            player.spigot().sendMessage(ChatMessageType.ACTION_BAR, component);
         }
     }
 
@@ -723,7 +707,7 @@ public class ElevatorController {
         // sync armor stands
         Location temp = controller.getLocation();
         Vector delta = velocity.clone().multiply(1/20f);
-        Bukkit.getScheduler().runTask(Elevator.INSTANCE, () -> {
+//        Bukkit.getScheduler().runTask(Elevator.INSTANCE, () -> {
 
 //        if (doTeleport) {
 //            double deltaY = velocity.getY() / 20d;
@@ -767,7 +751,7 @@ public class ElevatorController {
                 velocity.setY(entityYVel);
                 entity.setVelocity(velocity);
             }
-        });
+//        });
         cabin.shift(delta);
 //        world.spawnParticle(Particle.COMPOSTER, cabin.getMinX(), cabin.getMinY(), cabin.getMinZ(), 1);
 //        world.spawnParticle(Particle.COMPOSTER, cabin.getMaxX(), cabin.getMaxY(), cabin.getMaxZ(), 1);
