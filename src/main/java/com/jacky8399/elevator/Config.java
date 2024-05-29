@@ -57,26 +57,29 @@ public class Config {
         floorNameCache.clear();
 
         FileConfiguration config = Elevator.INSTANCE.getConfig();
-        ConfigurationSection messages = config.getConfigurationSection("messages");
-        msgErrorNotInElevator = getColorString(config, "messages.error-not-in-elevator");
-        msgNoFloors = getColorString(config, "messages.no-floors");
-        msgCurrentFloor = getColorString(config, "messages.current-floor");
-        msgCurrentFloorTemplate = buildFloorMessageTemplate(msgCurrentFloor);
-        msgFloor = getColorString(config, "messages.floor");
-        msgFloorTemplate = buildFloorMessageTemplate(msgFloor);
-        msgNoFloor = getColorString(config, "messages.no-floor");
-        msgDefaultGroundFloorName = getColorString(config, "messages.default-ground-floor-name");
-        msgDefaultFloorName = getColorString(config, "messages.default-floor-name");
-        msgCooldown = getColorString(config, "messages.cooldown");
-        msgScanResult = getColorString(config, "messages.scan.result");
-        msgScannedFloor = getColorString(config, "messages.scan.scanned-floor");
-        msgScannedCurrentFloor = getColorString(config, "messages.scan.scanned-current-floor");
-        msgMaintenance = getColorString(config, "messages.maintenance");
-        msgBeginMaintenance = getColorString(config, "messages.begin-maintenance");
-        msgEndMaintenance = getColorString(config, "messages.end-maintenance");
-        msgEnterFloorName = getColorString(config, "messages.enter-floor-name");
 
-        ConfigurationSection editCabinMessages = messages.getConfigurationSection("edit-cabin");
+        debug = config.getBoolean("debug");
+
+        ConfigurationSection messages = Objects.requireNonNull(config.getConfigurationSection("messages"));
+        msgErrorNotInElevator = getColorString(messages, "error-not-in-elevator");
+        msgNoFloors = getColorString(messages, "no-floors");
+        msgCurrentFloor = getColorString(messages, "current-floor");
+        msgCurrentFloorTemplate = buildFloorMessageTemplate(msgCurrentFloor);
+        msgFloor = getColorString(messages, "floor");
+        msgFloorTemplate = buildFloorMessageTemplate(msgFloor);
+        msgNoFloor = getColorString(messages, "no-floor");
+        msgDefaultGroundFloorName = getColorString(messages, "default-ground-floor-name");
+        msgDefaultFloorName = getColorString(messages, "default-floor-name");
+        msgCooldown = getColorString(messages, "cooldown");
+        msgScanResult = getColorString(messages, "scan.result");
+        msgScannedFloor = getColorString(messages, "scan.scanned-floor");
+        msgScannedCurrentFloor = getColorString(messages, "scan.scanned-current-floor");
+        msgMaintenance = getColorString(messages, "maintenance");
+        msgBeginMaintenance = getColorString(messages, "begin-maintenance");
+        msgEndMaintenance = getColorString(messages, "end-maintenance");
+        msgEnterFloorName = getColorString(messages, "enter-floor-name");
+
+        ConfigurationSection editCabinMessages = Objects.requireNonNull(messages.getConfigurationSection("edit-cabin"));
         msgEditCabinInstructions = getColorString(editCabinMessages, "instructions");
         msgEditCabinPos1 = getColorString(editCabinMessages, "pos1");
         msgEditCabinPos2 = getColorString(editCabinMessages, "pos2");
@@ -85,13 +88,15 @@ public class Config {
 
         ConfigurationSection elevator = config.getConfigurationSection("elevator");
 
-        elevatorCooldown = config.getInt("elevator.cooldown");
+        elevatorCooldown = elevator.getInt("cooldown");
 
         elevatorMaxHeight = elevator.getInt("max-height");
 
-        elevatorFloorBlock = getBlock(config, "elevator.scanner.floor-block");
-        elevatorScannerBlock = getBlock(config, "elevator.scanner.scanner-block");
-        elevatorScannerDirectional = config.getBoolean("elevator.scanner.scanner-directional");
+        var scanner = elevator.getConfigurationSection("scanner");
+
+        elevatorFloorBlock = getBlock(scanner, "floor-block");
+        elevatorScannerBlock = getBlock(scanner, "scanner-block");
+        elevatorScannerDirectional = scanner.getBoolean("scanner-directional");
     }
 
     // Utilities
@@ -117,7 +122,10 @@ public class Config {
     private static Material getBlock(ConfigurationSection yaml, String path) {
         String string = Objects.requireNonNull(yaml.getString(path), path + " cannot be null");
         NamespacedKey key = Objects.requireNonNull(NamespacedKey.fromString(string), "Invalid key " + string);
-        return Objects.requireNonNull(Registry.MATERIAL.get(key), "Invalid block " + string);
+        Material material = Objects.requireNonNull(Registry.MATERIAL.get(key), "Invalid block " + string);
+        if (!material.isBlock())
+            throw new IllegalArgumentException("Invalid block " + string);
+        return material;
     }
 
     private static String buildFloorMessageTemplate(String string) {

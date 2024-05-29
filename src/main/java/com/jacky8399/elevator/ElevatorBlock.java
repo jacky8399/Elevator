@@ -10,14 +10,11 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.function.Consumer;
 
-public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, @Nullable Shulker collision) {
+public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, @Nullable Shulker collision, boolean virtual) {
 
     public static ElevatorBlock spawnFor(World world, Block base, Block block, Location displayEntityLocation) {
         BlockData data = block.getBlockData();
 
-        Location location = block.getLocation();
-        Location centerLocation = location.clone().add(0.5, 0, 0.5);
-//        Entity base = spawnBase(world, centerLocation);
 
         BlockDisplay display = world.spawn(displayEntityLocation, BlockDisplay.class, e -> {
             e.setBlock(data);
@@ -26,6 +23,7 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, @Nulla
 
         Shulker shulker;
         if (false && block.getType().isOccluding()) {
+            Location location = block.getLocation();
             shulker = world.spawn(location, Shulker.class, e -> {
                 e.setAI(false);
                 e.setInvisible(true);
@@ -37,7 +35,16 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, @Nulla
             shulker = null;
         }
 
-        return new ElevatorBlock(new BlockPos(block.getX() - base.getX(), block.getY() - base.getY(), block.getZ() - base.getZ()), display, shulker);
+        return new ElevatorBlock(new BlockPos(block.getX() - base.getX(), block.getY() - base.getY(), block.getZ() - base.getZ()), display, shulker, false);
+    }
+
+    public static ElevatorBlock spawnVirtualFor(World world, Block base, Block block, BlockData blockData, Location displayEntityLocation) {
+        BlockDisplay display = world.spawn(displayEntityLocation, BlockDisplay.class, e -> {
+            e.setBlock(blockData);
+            e.setTeleportDuration(0);
+        });
+
+        return new ElevatorBlock(new BlockPos(block.getX() - base.getX(), block.getY() - base.getY(), block.getZ() - base.getZ()), display, null, true);
     }
 
 //    public static ElevatorBlock spawnBorder(World world, Location location) {

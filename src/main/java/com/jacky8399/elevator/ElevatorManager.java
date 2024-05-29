@@ -12,6 +12,15 @@ import java.util.WeakHashMap;
 public class ElevatorManager {
     public static final Map<Block, ElevatorController> elevators = new LinkedHashMap<>();
 
+    public static void cleanUp() {
+        elevators.clear();
+        playerElevatorCache.clear();
+        playerEditingElevator.clear();
+        playerEditingElevatorPos.clear();
+        managedDoors.clear();
+        managedFloors.clear();
+    }
+
     public record PlayerElevator(ElevatorController controller, int floorIdx) {}
     public static final WeakHashMap<Player, PlayerElevator> playerElevatorCache = new WeakHashMap<>();
 

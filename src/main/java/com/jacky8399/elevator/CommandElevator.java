@@ -142,9 +142,35 @@ public class CommandElevator implements TabExecutor {
                     player.setGravity(true);
                 }
             }
+            case "setspeed" -> {
+                if (!checkPermission(player, "command.setspeed"))
+                    return true;
+                if (args.length != 2) {
+                    player.sendMessage(ChatColor.RED + "Usage: /" + label + " setspeed <speed>");
+                    return true;
+                }
+                int speed;
+                try {
+                    speed = Integer.parseInt(args[1]);
+                    if (speed <= 0 || speed > 20)
+                        throw new IllegalArgumentException("Speed must be an integer between 1 - 20");
+                } catch (Exception ex) {
+                    player.sendMessage(ChatColor.RED + "Invalid speed: " + ex.getMessage());
+                    return true;
+                }
+                var cache = ElevatorManager.playerElevatorCache.get(player);
+                if (cache == null) {
+                    player.sendMessage(ChatColor.RED + "You are not in an elevator!");
+                    return true;
+                }
+                cache.controller().speed = speed;
+                player.sendMessage(ChatColor.GREEN + "Set elevator speed to " + speed + " blocks per second");
+                if (20 % speed != 0) {
+                    player.sendMessage(ChatColor.YELLOW + "Please note that speeds that are not factors of 20 will never be supported.");
+                }
+            }
             default -> player.sendMessage(ChatColor.RED + "Unknown command " + args[0]);
         }
-
         return true;
     }
 

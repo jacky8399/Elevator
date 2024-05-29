@@ -18,10 +18,7 @@ import org.bukkit.block.data.Directional;
 import org.bukkit.block.data.type.Door;
 import org.bukkit.block.data.type.TrapDoor;
 import org.bukkit.block.sign.Side;
-import org.bukkit.entity.BlockDisplay;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Player;
+import org.bukkit.entity.*;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataAdapterContext;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -54,10 +51,10 @@ public class ElevatorController {
     boolean moving;
     List<ElevatorBlock> movingBlocks;
 
-    ArrayList<BlockDisplay> ropeEntities = new ArrayList<>();
+    int ropeLength = 0;
 
     /** cabin entities and their Y offset relative to the cabin */
-    Map<LivingEntity, Double> cabinEntities;
+    Map<Entity, Double> cabinEntities;
 
     List<ElevatorFloor> floors = new ArrayList<>();
     int currentFloorIdx = 1;
@@ -90,13 +87,8 @@ public class ElevatorController {
     private Collection<Entity> scanCabinEntities() {
         BoundingBox lenientBox = cabin.clone().expand(0.1, 0.1, 0.1);
         return world.getNearbyEntities(lenientBox, e -> {
-            return e instanceof LivingEntity;
-//            if (!(e instanceof LivingEntity))
-//                return false;
-//            // shrink entity hitbox for leniency
-//            BoundingBox box = e.getBoundingBox().expand(-0.05, -0.05, -0.05);
-//            // ensure that the half of the bounding box is inside the cabin
-//            return cabin.contains(box.getCenter()) && (cabin.contains(box.getMin()) || cabin.contains(box.getMax()));
+            // these entities might be safe to teleport
+            return e instanceof LivingEntity || e instanceof Hanging || e instanceof Vehicle || e instanceof Item;
         });
     }
 
@@ -135,17 +127,20 @@ public class ElevatorController {
                     temp.setY(rayTrace.getHitPosition().getY());
                     PaperUtils.teleport(entity, temp);
                 }
+            } else if (entity instanceof ItemFrame itemFrame) {
+                // turns out you can't make paintings fixed. too bad!
+                itemFrame.setFixed(true);
             }
 
             double deltaY = temp.getY() - cabin.getMinY();
-            this.cabinEntities.put((LivingEntity) entity, deltaY);
+            this.cabinEntities.put(entity, deltaY);
         }
 
         int length = maxX - minX;
         int width = maxZ - minZ;
         int height = maxY - minY;
 
-        int noOfBlocks = length * width * height + 2 * length * width;
+        int noOfBlocks = length * width * height + 2 * length * width + 1 /* rope */;
         movingBlocks = new ArrayList<>(noOfBlocks);
         var toBreak = new ArrayList<Block>();
         var toBreakNonSolid = new ArrayList<Block>();
@@ -171,6 +166,10 @@ public class ElevatorController {
                 }
             }
         }
+        // spawn virtual rope attached to the moving cabin
+        Block ropeBlock = world.getBlockAt(controller.getX(), maxY, controller.getZ());
+        movingBlocks.add(ElevatorBlock.spawnVirtualFor(world, baseBlock, ropeBlock, ROPE_MATERIAL, ropeBlock.getLocation().add(0, yPadding, 0)));
+
         Bukkit.getScheduler().runTask(Elevator.INSTANCE, () -> {
             for (Block block : toBreakNonSolid) {
                 block.setType(Material.AIR, false);
@@ -259,6 +258,8 @@ public class ElevatorController {
 //                block.stand().getLocation(location);
                 block.display().setTransformation(new Transformation(new Vector3f(), new Quaternionf(), new Vector3f(1), new Quaternionf()));
 
+                if (block.virtual()) // don't place if virtual
+                    continue;
                 baseBlock.getLocation(location);
                 location.add(block.pos().x(), block.pos().y(), block.pos().z());
                 // I love floating point errors
@@ -276,26 +277,35 @@ public class ElevatorController {
         }
         movingBlocks.clear();
         Elevator.mustCleanupList.add(oldMovingBlocks);
-        Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
+        Runnable runnable = () -> {
             for (ElevatorBlock block : oldMovingBlocks) {
                 block.remove();
             }
             Elevator.mustCleanupList.remove(oldMovingBlocks);
-            if (Config.debug)
+            if (Config.debug) {
                 debug("Cleaned up " + oldMovingBlocks.size() + " entities");
-        }, 2);
+            }
+        };
+        if (Elevator.disabling) { // remove now if shutting down
+            runnable.run();
+        } else {
+            Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, runnable, 2);
+        }
 
 
         double cabinMinY = cabin.getMinY();
 
         for (var entry : cabinEntities.entrySet()) {
-            LivingEntity entity = entry.getKey();
+            Entity entity = entry.getKey();
             double offset = entry.getValue();
 
             entity.setGravity(true);
             entity.setFallDistance(0);
+            // undo special treatment of players and hangables
             if (entity instanceof Player player) {
                 PlayerUtils.unsetAllowFlight(player);
+            } else if (entity instanceof ItemFrame itemFrame) {
+                itemFrame.setFixed(false);
             }
             // prevent glitching through blocks
             entity.getLocation(location).setY(Math.round(cabinMinY + offset) + 0.1);
@@ -307,7 +317,8 @@ public class ElevatorController {
         velocity = null;
         moving = false;
 
-        refreshRope();
+        if (!Elevator.disabling)
+            refreshRope();
     }
 
     private void setNearbyDoors(boolean state) {
@@ -385,13 +396,11 @@ public class ElevatorController {
 
     public void cleanUp() {
         immobilize();
-        for (BlockDisplay blockDisplay : ropeEntities) {
-            blockDisplay.remove();
-        }
-        ropeEntities.clear();
+        removeRope();
     }
 
     public void scanFloors() {
+        removeRope();
         // clear previous floors from the global cache
         for (ElevatorFloor floor : floors) {
             if (floor.source != null)
@@ -512,6 +521,7 @@ public class ElevatorController {
         }
         // remove unused floor overrides
         floorNameOverrides.keySet().retainAll(floorYs);
+        refreshRope();
     }
 
     public void moveUp() {
@@ -708,40 +718,38 @@ public class ElevatorController {
         Location temp = controller.getLocation();
         Vector delta = velocity.clone().multiply(1/20f);
 //        Bukkit.getScheduler().runTask(Elevator.INSTANCE, () -> {
-
-//        if (doTeleport) {
-//            double deltaY = velocity.getY() / 20d;
-//            for (ElevatorBlock block : movingBlocks) {
-//                PaperUtils.teleport(block.stand(), block.stand().getLocation(temp).add(0, deltaY, 0));
-//            }
-//        }
-
             double cabinMinY = cabin.getMinY();
 
             double entityYVel = delta.getY();
             for (var iter = cabinEntities.entrySet().iterator(); iter.hasNext(); ) {
                 var entry = iter.next();
-                LivingEntity entity = entry.getKey();
+                Entity entity = entry.getKey();
                 double offset = entry.getValue();
 
-                if (entity.isDead()) {
+                if (!entity.isValid()) {
                     iter.remove();
                     continue;
                 }
 
                 Vector velocity = entity.getVelocity();
-                if (doTeleport) {
+                boolean mustTeleport = entity instanceof ItemFrame;
+
+                if (doTeleport || mustTeleport) { // hanging entities cannot have velocity (I think)
                     // force synchronize location
                     entity.getLocation(temp);
-                    temp.setY(cabinMinY + offset + velocity.getY());
-                    if (Math.abs(cabinMinY + offset - (temp.getY() + velocity.getY())) > 0.5) {
-                        if (Config.debug) {
-                            debug("Player: %s, offset: %.2f, expected Y: %.4f, actual Y: %.4f".formatted(
-                                    entity.getName(), offset, cabinMinY + offset, temp.getY() + velocity.getY()));
+                    double expectedY = cabinMinY + offset;
+                    double actualY = temp.getY();
+                    if (Math.abs(expectedY - actualY) > 0.5 || mustTeleport) {
+                        if (Config.debug && !mustTeleport) {
+                            debug(("Player: %s, offset: %.2f, cabin Y: %.2f, expected Y: %.4f\n" +
+                                    "actual Y: %.4f (location: %.2f, velocity: %.2f)").formatted(
+                                    entity.getName(), offset, cabinMinY, expectedY,
+                                    actualY, temp.getY(), velocity.getY()
+                            ));
                         }
+                        temp.setY(expectedY);
                         PaperUtils.teleport(entity, temp);
                     }
-//                    world.spawnParticle(Particle.CRIT, temp, 0);
                 }
                 entity.setGravity(false);
                 if (entity instanceof Player player) {
@@ -753,61 +761,68 @@ public class ElevatorController {
             }
 //        });
         cabin.shift(delta);
-//        world.spawnParticle(Particle.COMPOSTER, cabin.getMinX(), cabin.getMinY(), cabin.getMinZ(), 1);
-//        world.spawnParticle(Particle.COMPOSTER, cabin.getMaxX(), cabin.getMaxY(), cabin.getMaxZ(), 1);
 
         refreshRope();
     }
 
+
+    private static final BlockData ROPE_MATERIAL = Material.OAK_FENCE.createBlockData();
     void refreshRope() {
-        int ropeLength = (int) (controller.getY() - cabin.getMaxY()) + 1;
-        int currentLength = ropeEntities.size();
-        if (ropeLength > currentLength) {
-            // spawn more
-            ropeEntities.ensureCapacity(ropeLength);
-            BlockData blockData = Material.OAK_FENCE.createBlockData();
-            for (int i = currentLength + 1; i <= ropeLength; i++) {
-                ropeEntities.add(world.spawn(controller.getLocation().add(0, -i, 0), BlockDisplay.class, display -> {
-                    display.setBlock(blockData);
-                    display.setInterpolationDuration(1);
-                }));
+        int expectedLength = Math.max(0, (int) Math.floor(controller.getY() - cabin.getMaxY() +
+                (moving ? (velocity.getY() > 0 ? 0.2 : -0.2) : 0) // physical rope must lag behind attached rope
+        ));
+        int currentLength = ropeLength;
+        if (expectedLength > currentLength) {
+            // place more
+            for (int i = currentLength; i < expectedLength; i++) {
+                Block block = controller.getRelative(0, -i - 1, 0);
+                if (block.getType() == Material.AIR) {
+                    block.setBlockData(ROPE_MATERIAL, false);
+                } else if (Config.debug) {
+                    debug("Dangerous rope placement at %s. Expected rope length: %d, current length: %d".formatted(block, expectedLength, currentLength));
+                }
             }
-        } else if (ropeLength < currentLength) {
+        } else if (expectedLength < currentLength) {
             // remove excess
-            List<BlockDisplay> subList = ropeEntities.subList(ropeLength, currentLength);
-            for (BlockDisplay display : subList) {
-                display.remove();
+            for (int i = expectedLength; i < currentLength; i++) {
+                Block block = controller.getRelative(0, -i - 1, 0);
+                if (block.getBlockData().matches(ROPE_MATERIAL)) {
+                    block.setType(Material.AIR, false);
+                } else if (Config.debug) {
+                    debug("Dangerous rope removal at %s. Expected rope length: %d, current length: %d".formatted(block, expectedLength, currentLength));
+                }
             }
-            subList.clear();
         }
-        // finally adjust the position of the last chain
-        if (ropeLength != 0) {
-            double height = (controller.getY() - cabin.getMaxY()) % 1d;
-            BlockDisplay blockDisplay = ropeEntities.get(ropeLength - 1);
-            blockDisplay.setTransformation(new Transformation(
-                    new Vector3f(0, (float) (1 - height) + 0.1f, 0), new Quaternionf(), new Vector3f(1), new Quaternionf()
-            ));
-        }
+        ropeLength = expectedLength;
     }
 
-    void showOutline(Collection<Player> players) {
-        BlockDisplay cabinOutline = BlockUtils.createOutline(world, cabin, Material.GLASS.createBlockData(), players);
-        BlockDisplay controllerOutline = BlockUtils.createOutline(world, BoundingBox.of(controller), MATERIAL.createBlockData(), players);
-        Elevator.mustCleanup.add(cabinOutline);
-        Elevator.mustCleanup.add(controllerOutline);
+    void removeRope() {
+        for (int i = 1; i <= ropeLength; i++) {
+            Block block = controller.getRelative(0, -i, 0);
+            if (block.getBlockData().matches(ROPE_MATERIAL)) {
+                block.setType(Material.AIR, false);
+            }
+        }
+        ropeLength = 0;
+    }
+
+    void showOutline(Player player) {
+        List<BlockDisplay> cabinOutline = BlockUtils.createOutline(world, cabin, Material.GLASS.createBlockData(), player);
+        List<BlockDisplay> controllerOutline = BlockUtils.createOutline(world, BoundingBox.of(controller), MATERIAL.createBlockData(), player);
+        Elevator.mustCleanup.addAll(cabinOutline);
+        Elevator.mustCleanup.addAll(controllerOutline);
         Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
-            cabinOutline.remove();
-            controllerOutline.remove();
+            cabinOutline.forEach(Entity::remove);
+            controllerOutline.forEach(Entity::remove);
         }, 10 * 20);
     }
     
     private void debug(String message) {
-        if (Config.debug) {
-            String realMessage = "[Elevator DEBUG] " + message;
-            for (Player player : scanCabinPlayers()) {
-                player.sendMessage(realMessage);
-            }
+        String realMessage = "[Elevator DEBUG] " + message;
+        for (Player player : scanCabinPlayers()) {
+            player.sendMessage(realMessage);
         }
+        Bukkit.getConsoleSender().sendMessage(realMessage);
     }
 
     public static final NamespacedKey ELEVATOR_CONTROLLER = new NamespacedKey(Elevator.INSTANCE, "elevator_controller");

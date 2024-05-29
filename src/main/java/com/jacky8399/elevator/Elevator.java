@@ -7,6 +7,7 @@ import org.bukkit.entity.Display;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.*;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public final class Elevator extends JavaPlugin {
@@ -18,6 +19,7 @@ public final class Elevator extends JavaPlugin {
 
     public static Set<List<ElevatorBlock>> mustCleanupList = new HashSet<>();
     public static Set<Display> mustCleanup = Collections.newSetFromMap(new WeakHashMap<>());
+    public static boolean disabling;
 
     @Override
     public void onEnable() {
@@ -43,13 +45,21 @@ public final class Elevator extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        disabling = true;
         for (ElevatorController controller : ElevatorManager.elevators.values()) {
-            controller.cleanUp();
-            controller.save();
+            try {
+                controller.cleanUp();
+                controller.save();
+            } catch (Exception ex) {
+                LOGGER.log(Level.SEVERE, "Elevator at (%s, %d, %d, %d) failed to save".formatted(
+                        controller.world.getName(),
+                        controller.controller.getX(),
+                        controller.controller.getY(),
+                        controller.controller.getZ()
+                ), ex);
+            }
         }
-        ElevatorManager.elevators.clear();
-        ElevatorManager.playerElevatorCache.clear();
-        ElevatorManager.managedDoors.clear();
+        ElevatorManager.cleanUp();
         for (List<ElevatorBlock> elevatorBlocks : mustCleanupList) {
             for (ElevatorBlock block : elevatorBlocks) {
                 block.remove();

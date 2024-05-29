@@ -31,8 +31,6 @@ import org.bukkit.util.BoundingBox;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.List;
-
 public class Events implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent e) {
@@ -48,7 +46,7 @@ public class Events implements Listener {
         controller.save();
         ElevatorManager.elevators.put(block, controller);
 
-        controller.showOutline(List.of(e.getPlayer()));
+        controller.showOutline(e.getPlayer());
 
     }
 
@@ -67,7 +65,7 @@ public class Events implements Listener {
                     ElevatorManager.playerEditingElevator.put(player, controller);
                 } else {
                     player.sendMessage(Config.msgEditCabinInstructions);
-                    controller.showOutline(List.of(e.getPlayer()));
+                    controller.showOutline(e.getPlayer());
                 }
             }
             return;
@@ -122,7 +120,7 @@ public class Events implements Listener {
                     BoundingBox bb = BoundingBox.of(firstPos.getBlock(), block);
                     editingController.cabin.resize(bb.getMinX(), bb.getMinY(), bb.getMinZ(), bb.getMaxX(), bb.getMaxY(), bb.getMaxZ());
                     editingController.scanFloors();
-                    editingController.showOutline(List.of(player));
+                    editingController.showOutline(player);
                     player.sendMessage(Config.msgEditCabinSuccess);
                     ElevatorManager.playerEditingElevator.remove(player);
                     ElevatorManager.playerEditingElevatorPos.remove(player);

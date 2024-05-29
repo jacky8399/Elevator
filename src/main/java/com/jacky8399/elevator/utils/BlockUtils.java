@@ -13,10 +13,15 @@ import org.bukkit.util.*;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
-import java.util.Collection;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 
 public class BlockUtils {
+
+    public static final Quaternionf NO_ROTATION = new Quaternionf();
+    public static final Vector3f DEFAULT_SCALE = new Vector3f(1);
+
     public static float getLowestPoint(Block block) {
         VoxelShape shape = block.getCollisionShape();
         float min = 2;
@@ -81,19 +86,33 @@ public class BlockUtils {
                 }
             }
         }
-
     }
 
-    public static BlockDisplay createOutline(World world, BoundingBox cabin, BlockData data, Collection<Player> players) {
-        return world.spawn(cabin.getMin().toLocation(world).add(0.05, 0.05, 0.05), BlockDisplay.class, blockDisplay -> {
-            blockDisplay.setVisibleByDefault(false);
-            players.forEach(player -> player.showEntity(Elevator.INSTANCE, blockDisplay));
+    public static Transformation translateBy(Vector3f translation) {
+        return new Transformation(translation, NO_ROTATION, DEFAULT_SCALE, NO_ROTATION);
+    }
 
-            blockDisplay.setBlock(data);
-            var scale = new Vector3f((float) cabin.getWidthX() - 0.1f, (float) cabin.getHeight() - 0.1f, (float) cabin.getWidthZ() - 0.1f);
-            blockDisplay.setTransformation(new Transformation(new Vector3f(), new Quaternionf(), scale, new Quaternionf()));
-            blockDisplay.setBrightness(new Display.Brightness(15, 15));
-            blockDisplay.setGlowing(true);
-        });
+    public static List<BlockDisplay> createOutline(World world, BoundingBox box, BlockData data, Player player) {
+        if (true || box.getVolume() < 2) {
+            return List.of(world.spawn(box.getMin().toLocation(world).add(0.05, 0.05, 0.05), BlockDisplay.class, blockDisplay -> {
+                blockDisplay.setVisibleByDefault(false);
+                player.showEntity(Elevator.INSTANCE, blockDisplay);
+
+                blockDisplay.setBlock(data);
+                var scale = new Vector3f((float) box.getWidthX() - 0.1f, (float) box.getHeight() - 0.1f, (float) box.getWidthZ() - 0.1f);
+                blockDisplay.setTransformation(new Transformation(new Vector3f(), NO_ROTATION, scale, NO_ROTATION));
+                blockDisplay.setBrightness(new Display.Brightness(15, 15));
+                blockDisplay.setGlowing(true);
+            }));
+        }
+        var list = new ArrayList<BlockDisplay>();
+
+        int widthX = (int) (box.getWidthX() + 0.5f);
+        int widthZ = (int) (box.getWidthZ() + 0.5f);
+        int height = (int) (box.getHeight() + 0.5f);
+        for (int x = 0; x < widthX; x += 16) {
+
+        }
+        return List.copyOf(list);
     }
 }
