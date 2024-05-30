@@ -33,6 +33,7 @@ public class CommandElevator implements TabExecutor {
         if (args[0].equals("reload") && checkPermission(sender, "command.reload")) {
             Elevator.INSTANCE.reloadConfig();
             sender.sendMessage(ChatColor.GREEN + "Config reloaded.");
+            return true;
         }
 
         if (!(sender instanceof Player player))

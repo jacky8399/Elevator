@@ -807,14 +807,30 @@ public class ElevatorController {
     }
 
     void showOutline(Player player) {
-        List<BlockDisplay> cabinOutline = BlockUtils.createOutline(world, cabin, Material.GLASS.createBlockData(), player);
-        List<BlockDisplay> controllerOutline = BlockUtils.createOutline(world, BoundingBox.of(controller), MATERIAL.createBlockData(), player);
-        Elevator.mustCleanup.addAll(cabinOutline);
-        Elevator.mustCleanup.addAll(controllerOutline);
-        Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
-            cabinOutline.forEach(Entity::remove);
-            controllerOutline.forEach(Entity::remove);
-        }, 10 * 20);
+        List<Display> cleanUp = new ArrayList<>();
+        try {
+            Location controllerLoc = controller.getLocation();
+            List<BlockDisplay> cabinOutline = BlockUtils.createLargeOutline(world, cabin, player, Color.AQUA);
+            List<BlockDisplay> controllerOutline = BlockUtils.createOutline(world, BoundingBox.of(controller), MATERIAL.createBlockData(), player, Color.WHITE);
+            cleanUp.addAll(cabinOutline);
+            cleanUp.addAll(controllerOutline);
+            for (var floor : floors) {
+                if (floor.source != null) {
+                    Location location = floor.source.getLocation().toCenterLocation();
+                    cleanUp.addAll(BlockUtils.createOutline(world, BoundingBox.of(floor.source), floor.source.getBlockData(), player, Color.YELLOW));
+//                    cleanUp.addAll(BlockUtils.createLine(location, controllerLoc.clone().subtract(location).toVector(),
+//                            (float) controllerLoc.distance(location), player, Color.GRAY));
+                }
+            }
+        } finally {
+            Elevator.mustCleanup.addAll(cleanUp);
+            Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
+                cleanUp.forEach(entity -> {
+                    entity.remove();
+                    Elevator.mustCleanup.remove(entity);
+                });
+            }, 10 * 20);
+        }
     }
     
     private void debug(String message) {
