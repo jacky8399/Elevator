@@ -37,6 +37,11 @@ elevator:
   cooldown: 60
   # How tall elevators can be
   max-height: 96
+  # The rope block.
+  # Most blocks should work, but it is recommended that you
+  # use something that doesn't need to be supported by other blocks.
+  # Specify block states with vanilla syntax.
+  rope-block: chain
 
   # The floor scanner.
   scanner:

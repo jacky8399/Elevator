@@ -74,12 +74,22 @@ public final class Elevator extends JavaPlugin {
 
     @Override
     public void reloadConfig() {
+        // remove all ropes
+        for (ElevatorController controller : ElevatorManager.elevators.values()) {
+            controller.removeRope();
+        }
+
         super.reloadConfig();
         Config.reload();
 
         getConfig().options().copyDefaults(true).parseComments(true);
 
         saveConfig();
+
+        // regenerate all ropes
+        for (ElevatorController controller : ElevatorManager.elevators.values()) {
+            controller.refreshRope();
+        }
     }
 
     public void tick() {

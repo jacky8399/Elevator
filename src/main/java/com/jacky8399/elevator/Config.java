@@ -1,9 +1,11 @@
 package com.jacky8399.elevator;
 
 import net.md_5.bungee.api.ChatColor;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.jetbrains.annotations.Nullable;
@@ -49,6 +51,7 @@ public class Config {
 
     public static Material elevatorFloorBlock;
     public static Material elevatorScannerBlock;
+    public static BlockData elevatorRopeBlock;
     public static boolean elevatorScannerDirectional;
 
     private static final Map<Integer, String> floorNameCache = new HashMap<>();
@@ -92,6 +95,8 @@ public class Config {
 
         elevatorMaxHeight = elevator.getInt("max-height");
 
+        elevatorRopeBlock = getBlockData(elevator, "rope-block");
+
         var scanner = elevator.getConfigurationSection("scanner");
 
         elevatorFloorBlock = getBlock(scanner, "floor-block");
@@ -119,13 +124,23 @@ public class Config {
                 null;
     }
 
+    private static String pathOf(ConfigurationSection yaml, String path) {
+        String currentPath = yaml.getCurrentPath();
+        return currentPath != null && !currentPath.isEmpty() ? currentPath + "." + path : path;
+    }
+
     private static Material getBlock(ConfigurationSection yaml, String path) {
-        String string = Objects.requireNonNull(yaml.getString(path), path + " cannot be null");
+        String string = Objects.requireNonNull(yaml.getString(path), pathOf(yaml, path) + " cannot be null");
         NamespacedKey key = Objects.requireNonNull(NamespacedKey.fromString(string), "Invalid key " + string);
         Material material = Objects.requireNonNull(Registry.MATERIAL.get(key), "Invalid block " + string);
         if (!material.isBlock())
             throw new IllegalArgumentException("Invalid block " + string);
         return material;
+    }
+
+    private static BlockData getBlockData(ConfigurationSection yaml, String path) {
+        String string = Objects.requireNonNull(yaml.getString(path), pathOf(yaml, path) + " cannot be null");
+        return Bukkit.createBlockData(string);
     }
 
     private static String buildFloorMessageTemplate(String string) {

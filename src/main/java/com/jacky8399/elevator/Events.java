@@ -1,9 +1,11 @@
 package com.jacky8399.elevator;
 
+import com.destroystokyo.paper.event.block.BlockDestroyEvent;
 import com.jacky8399.elevator.utils.ItemUtils;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
@@ -18,9 +20,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.Action;
-import org.bukkit.event.block.BlockPlaceEvent;
-import org.bukkit.event.block.BlockRedstoneEvent;
+import org.bukkit.event.block.*;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -179,6 +179,54 @@ public class Events implements Listener {
     @EventHandler
     public void onPlayerHotbar(PlayerItemHeldEvent e) {
 
+    }
+
+    @EventHandler
+    public void onBlockDestroyed(BlockDestroyEvent e) {
+        // check if rope
+        Block block = e.getBlock();
+        if (!Config.elevatorRopeBlock.matches(block.getBlockData()))
+            return;
+        // scan up to try to find the controller
+        var controller = doRopeScan(block);
+        if (controller != null) {
+            e.setCancelled(true);
+            controller.removeRope();
+        }
+    }
+
+    @EventHandler
+    public void onBlockLoot(BlockDropItemEvent e) {
+        // check if rope
+        Block block = e.getBlock();
+        BlockState state = e.getBlockState();
+        if (!Config.elevatorRopeBlock.matches(state.getBlockData()))
+            return;
+        // scan up to try to find the controller
+        var controller = doRopeScan(block);
+        if (controller != null) {
+            e.setCancelled(true);
+            controller.removeRope();
+        }
+    }
+
+    private static ElevatorController doRopeScan(Block block) {
+        World world = block.getWorld();
+        int maxHeight = world.getMaxHeight();
+        Location location = block.getLocation().add(0, 1, 0);
+        while (location.getY() <= maxHeight) {
+            Block up = world.getBlockAt(location);
+            if (!Config.elevatorRopeBlock.matches(up.getBlockData()) && !ElevatorController.MATERIAL.equals(up.getType())) {
+                return null;
+            }
+
+            ElevatorController controller = ElevatorManager.elevators.get(up);
+            if (controller != null) {
+                return controller;
+            }
+            location.add(0, 1, 0);
+        }
+        return null;
     }
 
 }

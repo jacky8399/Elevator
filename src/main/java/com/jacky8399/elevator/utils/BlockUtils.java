@@ -147,8 +147,6 @@ public class BlockUtils {
         list.addAll(createLine(bottom.clone().add(0, 0, widthZ), yDir, height, player, color));
         list.addAll(createLine(bottom.clone().add(widthX, 0, widthZ), yDir, height, player, color));
 
-        Elevator.LOGGER.info(list.size() + " lines");
-
         return List.copyOf(list);
     }
 

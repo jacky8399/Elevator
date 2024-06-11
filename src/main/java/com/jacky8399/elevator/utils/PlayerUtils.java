@@ -1,5 +1,6 @@
 package com.jacky8399.elevator.utils;
 
+import net.kyori.adventure.util.TriState;
 import org.bukkit.entity.Player;
 
 import java.util.Collections;

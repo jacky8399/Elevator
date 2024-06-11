@@ -3,6 +3,7 @@ package com.jacky8399.elevator;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Shulker;
@@ -10,32 +11,30 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.function.Consumer;
 
-public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, @Nullable Shulker collision, boolean virtual) {
+public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, @Nullable Shulker collision, BlockState blockState) {
 
     public static ElevatorBlock spawnFor(World world, Block base, Block block, Location displayEntityLocation) {
         BlockData data = block.getBlockData();
-
+        BlockState state = block.getState();
 
         BlockDisplay display = world.spawn(displayEntityLocation, BlockDisplay.class, e -> {
             e.setBlock(data);
             e.setTeleportDuration(0);
         });
 
-        Shulker shulker;
-        if (false && block.getType().isOccluding()) {
-            Location location = block.getLocation();
-            shulker = world.spawn(location, Shulker.class, e -> {
-                e.setAI(false);
-                e.setInvisible(true);
-                e.setInvulnerable(true);
-
-//                base.addPassenger(e);
-            });
-        } else {
-            shulker = null;
+        Shulker shulker = null;
+        if (block.getType().isOccluding()) {
+//            Location location = block.getLocation();
+//            shulker = world.spawn(location, Shulker.class, e -> {
+//                e.setAI(false);
+//                e.setInvisible(true);
+//                e.setInvulnerable(true);
+//
+////                base.addPassenger(e);
+//            });
         }
 
-        return new ElevatorBlock(new BlockPos(block.getX() - base.getX(), block.getY() - base.getY(), block.getZ() - base.getZ()), display, shulker, false);
+        return new ElevatorBlock(new BlockPos(block.getX() - base.getX(), block.getY() - base.getY(), block.getZ() - base.getZ()), display, shulker, state);
     }
 
     public static ElevatorBlock spawnVirtualFor(World world, Block base, Block block, BlockData blockData, Location displayEntityLocation) {
@@ -44,7 +43,7 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, @Nulla
             e.setTeleportDuration(0);
         });
 
-        return new ElevatorBlock(new BlockPos(block.getX() - base.getX(), block.getY() - base.getY(), block.getZ() - base.getZ()), display, null, true);
+        return new ElevatorBlock(new BlockPos(block.getX() - base.getX(), block.getY() - base.getY(), block.getZ() - base.getZ()), display, null, null);
     }
 
 //    public static ElevatorBlock spawnBorder(World world, Location location) {
