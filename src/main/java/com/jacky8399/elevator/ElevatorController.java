@@ -734,7 +734,8 @@ public class ElevatorController {
         Location temp = controller.getLocation();
         Vector delta = velocity.clone().multiply(1/20f);
 //        Bukkit.getScheduler().runTask(Elevator.INSTANCE, () -> {
-        BoundingBox lenientCabinBox = cabin.clone().expand(0.1);
+        // Y box should be really large to account for lagging players
+        BoundingBox veryLenientBox = cabin.clone().expand(1.5, world.getMaxHeight(), 1.5);
             double cabinMinY = cabin.getMinY();
 
             double entityYVel = delta.getY();
@@ -749,7 +750,7 @@ public class ElevatorController {
                 }
 
                 entity.getLocation(temp);
-                if (!lenientCabinBox.contains(temp.getX(), temp.getY(), temp.getZ())) {
+                if (!veryLenientBox.contains(temp.getX(), temp.getY(), temp.getZ())) {
                     onLeaveCabin(entity, temp, offset);
                     iter.remove();
                     continue;
@@ -927,9 +928,10 @@ public class ElevatorController {
         @NotNull
         @Override
         public ElevatorController fromPrimitive(@NotNull PersistentDataContainer primitive, @NotNull PersistentDataAdapterContext context) {
-            int dataVersion = primitive.get(DATA_VERSION_KEY, INTEGER);
+            Integer dataVersion = primitive.get(DATA_VERSION_KEY, INTEGER);
 
             return switch (dataVersion) {
+                case null -> throw new IllegalArgumentException("Missing data version");
                 case 1 -> {
                     int[] cabinCoords = primitive.get(CABIN_KEY, INTEGER_ARRAY);
                     BoundingBox box = new BoundingBox(cabinCoords[0], cabinCoords[1], cabinCoords[2], cabinCoords[3], cabinCoords[4], cabinCoords[5]);
