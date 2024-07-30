@@ -2,6 +2,9 @@ package com.jacky8399.elevator;
 
 import com.destroystokyo.paper.event.block.BlockDestroyEvent;
 import com.jacky8399.elevator.utils.ItemUtils;
+import net.kyori.adventure.audience.Audience;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -20,7 +23,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.*;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockDropItemEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.BlockRedstoneEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -30,6 +36,11 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.util.BoundingBox;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.Map;
+
+import static com.jacky8399.elevator.Elevator.ADVNTR;
+import static com.jacky8399.elevator.Messages.*;
 
 public class Events implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -55,16 +66,17 @@ public class Events implements Listener {
         if (e.getAction() != Action.RIGHT_CLICK_BLOCK || e.getClickedBlock() == null)
             return;
         Player player = e.getPlayer();
+        Audience audience = ADVNTR.player(player);
         Block block = e.getClickedBlock();
         ElevatorController controller = ElevatorManager.elevators.get(block);
         if (controller != null) {
             e.setCancelled(true);
             if (!player.isSneaking()) {
                 if (e.getMaterial() == Material.SLIME_BALL) {
-                    player.sendMessage(Config.msgEditCabinPos1);
+                    audience.sendMessage(msgEditCabinPos1);
                     ElevatorManager.playerEditingElevator.put(player, controller);
                 } else {
-                    player.sendMessage(Config.msgEditCabinInstructions);
+                    audience.sendMessage(msgEditCabinInstructions);
                     controller.showOutline(e.getPlayer());
                 }
             }
@@ -76,9 +88,9 @@ public class Events implements Listener {
             var floor = controllerForFloor.floors.stream().filter(f -> f.y() == y).findFirst();
             if (floor.isEmpty())
                 return;
-            String floorName = Config.untranslateColor(floor.get().name());
+            String floorName = MiniMessage.miniMessage().serialize(floor.get().name());
             // rename floor
-            player.sendMessage(Config.msgEnterFloorName.replace("{floorName}", floorName));
+            audience.sendMessage(renderMessage(msgEnterFloorName, Map.of("floor_name", Component.text(floorName))));
             player.beginConversation(new ConversationFactory(Elevator.INSTANCE)
                     .withFirstPrompt(new StringPrompt() {
                         @Override
@@ -89,7 +101,7 @@ public class Events implements Listener {
                         @Override
                         public @Nullable Prompt acceptInput(@NotNull ConversationContext context, @Nullable String input) {
                             if (input != null && !floorName.equals(input)) {
-                                String newFloorName = Config.translateColor(input);
+                                Component newFloorName = parsePlayerMiniMessage(input);
                                 var controller = ElevatorManager.managedFloors.get(block);
                                 if (controller != null) {
                                     controller.floorNameOverrides.put(y, newFloorName);
@@ -115,19 +127,19 @@ public class Events implements Listener {
                 Location firstPos = ElevatorManager.playerEditingElevatorPos.get(player);
                 if (firstPos == null) {
                     ElevatorManager.playerEditingElevatorPos.put(player, block.getLocation());
-                    player.sendMessage(Config.msgEditCabinPos2);
+                    audience.sendMessage(msgEditCabinPos2);
                 } else {
                     BoundingBox bb = BoundingBox.of(firstPos.getBlock(), block);
                     editingController.cabin.resize(bb.getMinX(), bb.getMinY(), bb.getMinZ(), bb.getMaxX(), bb.getMaxY(), bb.getMaxZ());
                     editingController.scanFloors();
                     editingController.showOutline(player);
-                    player.sendMessage(Config.msgEditCabinSuccess);
+                    audience.sendMessage(msgEditCabinSuccess);
                     ElevatorManager.playerEditingElevator.remove(player);
                     ElevatorManager.playerEditingElevatorPos.remove(player);
                 }
             } else {
                 // cancel
-                player.sendMessage(Config.msgEditCabinFailed);
+                audience.sendMessage(msgEditCabinFailed);
                 ElevatorManager.playerEditingElevator.remove(player);
                 ElevatorManager.playerEditingElevatorPos.remove(player);
             }

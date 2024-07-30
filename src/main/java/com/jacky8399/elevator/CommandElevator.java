@@ -1,6 +1,8 @@
 package com.jacky8399.elevator;
 
 import com.jacky8399.elevator.utils.ItemUtils;
+import net.kyori.adventure.audience.Audience;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
@@ -13,6 +15,10 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+
+import static com.jacky8399.elevator.Elevator.ADVNTR;
+import static com.jacky8399.elevator.Messages.*;
 
 public class CommandElevator implements TabExecutor {
     private static boolean checkPermission(CommandSender sender, String perm) {
@@ -38,6 +44,7 @@ public class CommandElevator implements TabExecutor {
 
         if (!(sender instanceof Player player))
             return true;
+        Audience audience = ADVNTR.player(player);
 
         switch (args[0]) {
             case "givecontroller" -> {
@@ -85,19 +92,20 @@ public class CommandElevator implements TabExecutor {
                     return true;
                 var cache = ElevatorManager.playerElevatorCache.get(player);
                 if (cache == null) {
-                    player.sendMessage(Config.msgErrorNotInElevator);
+                    audience.sendMessage(msgErrorNotInElevator);
                     return true;
                 }
                 ElevatorController controller = cache.controller();
                 controller.maintenance = !controller.maintenance;
-                player.sendMessage(controller.maintenance ? Config.msgBeginMaintenance : Config.msgEndMaintenance);
+                Component message = controller.maintenance ? msgBeginMaintenance : msgEndMaintenance;
+                audience.sendMessage(message);
             }
             case "up" -> {
                 if (!checkPermission(player, "command.up"))
                     return true;
                 var cache = ElevatorManager.playerElevatorCache.get(player);
                 if (cache == null) {
-                    player.sendMessage(ChatColor.RED + "You are not in an elevator!");
+                    audience.sendMessage(msgErrorNotInElevator);
                     return true;
                 }
                 ElevatorController controller = cache.controller();
@@ -108,7 +116,7 @@ public class CommandElevator implements TabExecutor {
                     return true;
                 var cache = ElevatorManager.playerElevatorCache.get(player);
                 if (cache == null) {
-                    player.sendMessage(ChatColor.RED + "You are not in an elevator!");
+                    audience.sendMessage(msgErrorNotInElevator);
                     return true;
                 }
                 ElevatorController controller = cache.controller();
@@ -119,16 +127,18 @@ public class CommandElevator implements TabExecutor {
                     return true;
                 var cache = ElevatorManager.playerElevatorCache.get(player);
                 if (cache == null) {
-                    player.sendMessage(Config.msgErrorNotInElevator);
+                    audience.sendMessage(msgErrorNotInElevator);
                     return true;
                 }
                 ElevatorController controller = cache.controller();
                 controller.scanFloors();
-                player.sendMessage(Config.msgScanResult.replace("{floors}", String.valueOf(controller.floors.size())));
+                audience.sendMessage(renderMessage(msgScanResult, Map.of("floors", Component.text(controller.floors.size()))));
                 for (int i = 0; i < controller.floors.size(); i++) {
                     var floor = controller.floors.get(i);
-                    player.sendMessage((i == controller.currentFloorIdx ? Config.msgScannedCurrentFloor : Config.msgScannedFloor)
-                            .replace("{name}", floor.name()).replace("{y}", String.valueOf(floor.y())));
+                    audience.sendMessage(renderMessage(i == controller.currentFloorIdx ? msgScannedCurrentFloor : msgScannedFloor, Map.of(
+                            "name", floor.name(),
+                            "x", Component.text(floor.y())
+                    )));
                 }
             }
             case "fixgravity" -> {

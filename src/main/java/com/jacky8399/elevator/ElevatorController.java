@@ -4,9 +4,10 @@ import com.jacky8399.elevator.utils.BlockUtils;
 import com.jacky8399.elevator.utils.MathUtils;
 import com.jacky8399.elevator.utils.PaperUtils;
 import com.jacky8399.elevator.utils.PlayerUtils;
-import net.md_5.bungee.api.ChatMessageType;
-import net.md_5.bungee.api.chat.BaseComponent;
-import net.md_5.bungee.api.chat.TextComponent;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.ComponentSerializer;
+import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.*;
 import org.bukkit.block.*;
 import org.bukkit.block.data.Bisected;
@@ -15,6 +16,7 @@ import org.bukkit.block.data.Directional;
 import org.bukkit.block.data.type.Door;
 import org.bukkit.block.data.type.TrapDoor;
 import org.bukkit.block.sign.Side;
+import org.bukkit.block.sign.SignSide;
 import org.bukkit.entity.*;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataAdapterContext;
@@ -31,6 +33,8 @@ import org.joml.Vector3f;
 import java.util.Comparator;
 import java.util.*;
 import java.util.logging.Level;
+
+import static com.jacky8399.elevator.Elevator.ADVNTR;
 
 public class ElevatorController {
     public static final Material MATERIAL = Material.DROPPER;
@@ -56,9 +60,9 @@ public class ElevatorController {
 
     List<ElevatorFloor> floors = new ArrayList<>();
     int currentFloorIdx = 1;
-    record ElevatorFloor(String name, int y, @Nullable Block source) {}
+    record ElevatorFloor(Component name, int y, @Nullable Block source) {}
 
-    Map<Integer, String> floorNameOverrides = new HashMap<>();
+    Map<Integer, Component> floorNameOverrides = new HashMap<>();
 
     /** How fast the elevator moves, in blocks per second */
     int speed = DEFAULT_SPEED;
@@ -473,15 +477,15 @@ public class ElevatorController {
             int topLevel = shaftTop - maxY + minY;
             int floor = 1;
             if (shaftBottom != minY)
-                floors.add(new ElevatorFloor(String.valueOf(floor++), shaftBottom, null));
-            floors.add(new ElevatorFloor(String.valueOf(floor), minY, null));
+                floors.add(new ElevatorFloor(Component.text(floor++), shaftBottom, null));
+            floors.add(new ElevatorFloor(Component.text(floor), minY, null));
             currentFloorIdx = floor++ - 1;
             if (topLevel != shaftBottom && topLevel != minY)
-                floors.add(new ElevatorFloor(String.valueOf(floor), topLevel, null));
+                floors.add(new ElevatorFloor(Component.text(floor), topLevel, null));
             if (Config.debug)
                 debug("No scanner, floors: " + floors);
         } else {
-            record TempFloor(int cabinY, Block source, String name) {}
+            record TempFloor(int cabinY, Block source, Component name) {}
             List<TempFloor> tempFloors = new ArrayList<>();
             for (var scanner : scanners) {
                 int y = scanner.block.getY();
@@ -493,7 +497,7 @@ public class ElevatorController {
                         if (Config.debug)
                             debug("Found floor at " + block);
 
-                        String floorName = floorNameOverrides.get(i); // look for a name override
+                        Component floorName = floorNameOverrides.get(i); // look for a name override
                         // else look for a sign and use it as the floor name
                         if (floorName == null) {
                             for (BlockFace face : BlockFace.values()) {
@@ -501,7 +505,9 @@ public class ElevatorController {
                                 if (Tag.SIGNS.isTagged(side.getType())) {
                                     Sign sign = (Sign) side.getState();
 
-                                    floorName = sign.getSide(Side.FRONT).getLine(0);
+                                    SignSide sign1 = sign.getSide(Side.FRONT);
+                                    // hahahaha
+                                    floorName = LegacyComponentSerializer.legacySection().deserialize(sign1.getLine(0));
                                 }
                             }
                         }
@@ -516,7 +522,7 @@ public class ElevatorController {
             for (int i = 0; i < tempFloors.size(); i++) {
                 TempFloor floor = tempFloors.get(i);
                 int floorY = floor.cabinY;
-                String realName = floor.name != null ? floor.name : Config.getDefaultFloorName(tempFloors.size() - i - 1);
+                Component realName = floor.name != null ? floor.name : Messages.defaultFloorName(tempFloors.size() - i - 1);
                 floors.add(new ElevatorFloor(realName, floorY, floor.source));
                 if (Math.abs(floorY - minY) < closestFloorDist) {
                     closestFloorDist = Math.abs(floorY - minY);
@@ -608,11 +614,9 @@ public class ElevatorController {
 
         if (maintenance) {
             if ((int) world.getGameTime() % 5 == 0) {
-                BaseComponent msgMaintenance = TextComponent.fromLegacy(Config.msgMaintenance);
+                Component msgMaintenance = Messages.msgMaintenance;
                 for (Player player : scanCabinPlayers()) {
-                    // I love spigot
-                    player.spigot().sendMessage(ChatMessageType.ACTION_BAR, msgMaintenance);
-//                    player.sendActionBar(Config.msgMaintenance);
+                    ADVNTR.player(player).sendActionBar(msgMaintenance);
                 }
             }
             return;
@@ -628,12 +632,10 @@ public class ElevatorController {
             // check for cooldown
             long ticksSinceMovementEnd = world.getGameTime() - movementEndTick;
             if (ticksSinceMovementEnd < Config.elevatorCooldown) {
-                String cooldownMsg = Config.msgCooldown.replace("{cooldown}",
-                        String.valueOf((int) ((Config.elevatorCooldown - ticksSinceMovementEnd) / 20)));
-                BaseComponent cooldownComponent = TextComponent.fromLegacy(cooldownMsg);
+                Component cooldownMsg = Messages.renderMessage(Messages.msgCooldown,
+                        Map.of("cooldown", Component.text((int) ((Config.elevatorCooldown - ticksSinceMovementEnd) / 20))));
                 for (Player player : scanCabinPlayers()) {
-                    player.spigot().sendMessage(ChatMessageType.ACTION_BAR, cooldownComponent);
-//                    player.sendActionBar(cooldownMsg);
+                    ADVNTR.player(player).sendActionBar(cooldownMsg);
                 }
                 return;
             }
@@ -680,7 +682,8 @@ public class ElevatorController {
             // check for scrolling
             int floorIdx = currentFloorIdx;
 
-            String rawMessage;
+            var audience = ADVNTR.player(player);
+            Component template;
             // TODO redo floor selection
             if (true || cache == null || cache.floorIdx() == currentFloorIdx) {
                 if (jumping || player.isSneaking()) {
@@ -698,7 +701,7 @@ public class ElevatorController {
                 ElevatorManager.playerElevatorCache.put(player,
                         new ElevatorManager.PlayerElevator(this, floorIdx));
 
-                rawMessage = Config.msgCurrentFloorTemplate;
+                template = Messages.msgCurrentFloor;
             } else {
 //                floorIdx = cache.floorIdx();
 //
@@ -714,15 +717,11 @@ public class ElevatorController {
 //                rawMessage = Config.msgFloorTemplate;
             }
 
-            String message = Config.getFloorMessage(rawMessage,
+            audience.sendActionBar(Messages.floorMessage(template,
                     floorIdx != floors.size() - 1 ? floors.get(floorIdx + 1).name : null,
                     floors.get(floorIdx).name,
                     floorIdx != 0 ? floors.get(floorIdx - 1).name : null
-            );
-
-            BaseComponent component = TextComponent.fromLegacy(message);
-//            player.sendActionBar(message);
-            player.spigot().sendMessage(ChatMessageType.ACTION_BAR, component);
+            ));
         }
     }
 
@@ -733,60 +732,61 @@ public class ElevatorController {
         // sync armor stands
         Location temp = controller.getLocation();
         Vector delta = velocity.clone().multiply(1/20f);
-//        Bukkit.getScheduler().runTask(Elevator.INSTANCE, () -> {
         // Y box should be really large to account for lagging players
         BoundingBox veryLenientBox = cabin.clone().expand(1.5, world.getMaxHeight(), 1.5);
-            double cabinMinY = cabin.getMinY();
+        double cabinMinY = cabin.getMinY();
 
-            double entityYVel = delta.getY();
-            for (var iter = cabinEntities.entrySet().iterator(); iter.hasNext(); ) {
-                var entry = iter.next();
-                Entity entity = entry.getKey();
-                double offset = entry.getValue();
+        double entityYVel = delta.getY();
+        for (var iter = cabinEntities.entrySet().iterator(); iter.hasNext(); ) {
+            var entry = iter.next();
+            Entity entity = entry.getKey();
+            double offset = entry.getValue();
 
-                if (!entity.isValid()) {
-                    iter.remove();
-                    continue;
-                }
-
-                entity.getLocation(temp);
-                if (!veryLenientBox.contains(temp.getX(), temp.getY(), temp.getZ())) {
-                    onLeaveCabin(entity, temp, offset);
-                    iter.remove();
-                    continue;
-                }
-
-                // check if still in cabin
-
-                Vector velocity = entity.getVelocity();
-                boolean mustTeleport = entity instanceof ItemFrame;
-
-                if (doTeleport || mustTeleport) { // hanging entities cannot have velocity (I think)
-                    // force synchronize location
-                    double expectedY = cabinMinY + offset;
-                    double actualY = temp.getY();
-                    if (Math.abs(expectedY - actualY) > 0.5 || mustTeleport) {
-                        if (Config.debug && !mustTeleport) {
-                            debug(("Player: %s, offset: %.2f, cabin Y: %.2f, expected Y: %.4f\n" +
-                                    "actual Y: %.4f (location: %.2f, velocity: %.2f)").formatted(
-                                    entity.getName(), offset, cabinMinY, expectedY,
-                                    actualY, temp.getY(), velocity.getY()
-                            ));
-                        }
-                        temp.setY(expectedY);
-                        PaperUtils.teleport(entity, temp);
-                    }
-                }
-                entity.setGravity(false);
-                if (entity instanceof Player player) {
-                    PlayerUtils.setAllowFlight(player);
-                    player.setFlying(false);
-                }
-                velocity.setY(entityYVel);
-                entity.setVelocity(velocity);
+            if (!entity.isValid()) {
+                iter.remove();
+                continue;
             }
-//        });
+
+            entity.getLocation(temp);
+            // check if still in cabin
+            if (!veryLenientBox.contains(temp.getX(), temp.getY(), temp.getZ())) {
+                onLeaveCabin(entity, temp, offset);
+                iter.remove();
+                continue;
+            }
+
+            Vector velocity = entity.getVelocity();
+            boolean mustTeleport = entity instanceof ItemFrame;
+
+            double y = temp.getY();
+            double expectedY = cabinMinY + offset;
+            temp.setY(expectedY);
+            if (doTeleport || mustTeleport) { // hanging entities cannot have velocity (I think)
+                // force synchronize location
+                if (Math.abs(expectedY - y) > 0.5 || mustTeleport) {
+                    if (Config.debug && !mustTeleport) {
+                        debug(("Player: %s, offset: %.2f, cabin Y: %.2f, expected Y: %.4f\n" +
+                                "actual Y: %.4f (location: %.2f, velocity: %.2f)").formatted(
+                                entity.getName(), offset, cabinMinY, expectedY,
+                                y, temp.getY(), velocity.getY()
+                        ));
+                    }
+                    PaperUtils.teleport(entity, temp);
+                }
+            }
+            entity.setGravity(false);
+            if (entity instanceof Player player) {
+                PlayerUtils.setAllowFlight(player);
+                player.setFlying(false);
+            }
+            velocity.setY(entityYVel);
+            entity.setVelocity(velocity);
+            world.spawnParticle(Particle.CRIT, temp, 0, 0, 0, 0, 0);
+        }
         cabin.shift(delta);
+
+        world.spawnParticle(Particle.COMPOSTER, cabin.getMinX(), cabin.getMinY(), cabin.getMinZ(), 1);
+        world.spawnParticle(Particle.COMPOSTER, cabin.getMaxX(), cabin.getMaxY(), cabin.getMaxZ(), 1);
 
         refreshRope();
     }
@@ -882,7 +882,7 @@ public class ElevatorController {
         }
 
         private static final NamespacedKey DATA_VERSION_KEY = key("data_version");
-        private static final int DATA_VERSION = 1;
+        private static final int DATA_VERSION = 2;
         private static final NamespacedKey CABIN_KEY = key("cabin");
         private static final NamespacedKey FLOOR_NAMES_KEY = key("floor_names");
         private static final NamespacedKey MAINTENANCE_KEY = key("maintenance");
@@ -913,7 +913,8 @@ public class ElevatorController {
             container.set(CABIN_KEY, INTEGER_ARRAY, cabinCoords);
             if (!complex.floorNameOverrides.isEmpty()) {
                 var floorNames = context.newPersistentDataContainer();
-                complex.floorNameOverrides.forEach((y, name) -> floorNames.set(key(Integer.toString(y)), STRING, name));
+                complex.floorNameOverrides.forEach((y, nameComponent) ->
+                        floorNames.set(key(Integer.toString(y)), STRING, GsonComponentSerializer.gson().serialize(nameComponent)));
                 container.set(FLOOR_NAMES_KEY, TAG_CONTAINER, floorNames);
             }
             if (complex.maintenance) {
@@ -932,7 +933,8 @@ public class ElevatorController {
 
             return switch (dataVersion) {
                 case null -> throw new IllegalArgumentException("Missing data version");
-                case 1 -> {
+                case 1 -> fromPrimitiveV2(primitive, LegacyComponentSerializer.legacySection());
+                case 2 -> {
                     int[] cabinCoords = primitive.get(CABIN_KEY, INTEGER_ARRAY);
                     BoundingBox box = new BoundingBox(cabinCoords[0], cabinCoords[1], cabinCoords[2], cabinCoords[3], cabinCoords[4], cabinCoords[5]);
                     var controller = new ElevatorController(box);
@@ -941,7 +943,8 @@ public class ElevatorController {
                     if (floorNames != null) {
                         for (NamespacedKey key : floorNames.getKeys()) {
                             int y = Integer.parseInt(key.getKey());
-                            controller.floorNameOverrides.put(y, floorNames.get(key, STRING));
+                            String legacy = Objects.requireNonNull(floorNames.get(key, STRING));
+                            controller.floorNameOverrides.put(y, GsonComponentSerializer.gson().deserialize(legacy));
                         }
                     }
                     controller.maintenance = primitive.getOrDefault(MAINTENANCE_KEY, BOOLEAN, false);
@@ -950,6 +953,25 @@ public class ElevatorController {
                 }
                 default -> throw new IllegalArgumentException("Invalid data version " + dataVersion);
             };
+        }
+
+        private static ElevatorController fromPrimitiveV2(PersistentDataContainer primitive,
+                                                          ComponentSerializer<? super Component, ? extends Component, String> serializer) {
+            int[] cabinCoords = primitive.get(CABIN_KEY, INTEGER_ARRAY);
+            BoundingBox box = new BoundingBox(cabinCoords[0], cabinCoords[1], cabinCoords[2], cabinCoords[3], cabinCoords[4], cabinCoords[5]);
+            var controller = new ElevatorController(box);
+
+            var floorNames = primitive.get(FLOOR_NAMES_KEY, TAG_CONTAINER);
+            if (floorNames != null) {
+                for (NamespacedKey key : floorNames.getKeys()) {
+                    int y = Integer.parseInt(key.getKey());
+                    String legacy = Objects.requireNonNull(floorNames.get(key, STRING));
+                    controller.floorNameOverrides.put(y, serializer.deserialize(legacy));
+                }
+            }
+            controller.maintenance = primitive.getOrDefault(MAINTENANCE_KEY, BOOLEAN, false);
+            controller.speed = primitive.getOrDefault(SPEED_KEY, INTEGER, DEFAULT_SPEED);
+            return controller;
         }
     }
 }

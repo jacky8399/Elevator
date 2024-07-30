@@ -1,10 +1,11 @@
 plugins {
+    id("io.github.goooler.shadow") version "8.1.8"
     id 'java'
     id("io.papermc.paperweight.userdev") version "1.7.1"
 }
 
 group = 'com.jacky8399'
-version = '1.0-SNAPSHOT'
+version = '1.1'
 
 repositories {
     mavenCentral()
@@ -26,20 +27,16 @@ dependencies {
 //    compileOnly "io.papermc.paper:paper-api:1.20.4-R0.1-SNAPSHOT"
     compileOnly("io.papermc.paper:paper-api:1.20.6-R0.1-SNAPSHOT")
     paperweight.paperDevBundle("1.20.6-R0.1-SNAPSHOT")
+
+    // Adventure
+    implementation "net.kyori:adventure-api:4.17.0"
+    implementation "net.kyori:adventure-platform-bukkit:4.3.3"
+    implementation "net.kyori:adventure-text-minimessage:4.17.0"
+
     compileOnly 'org.jetbrains:annotations:24.0.1'
 }
 
-//def targetJavaVersion = 17
-//java {
-//    def javaVersion = JavaVersion.toVersion(targetJavaVersion)
-//    sourceCompatibility = javaVersion
-//    targetCompatibility = javaVersion
-//    if (JavaVersion.current() < javaVersion) {
-//        toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
-//    }
-//}
-
-tasks{
+tasks {
     compileJava {
         options.release.set(21)
         options.encoding = 'UTF-8'
@@ -48,6 +45,14 @@ tasks{
     assemble {
         dependsOn reobfJar
     }
+
+    reobfJar {
+        dependsOn shadowJar
+    }
+}
+
+shadowJar {
+    relocate 'net.kyori', 'com.jacky8399.elevator.advntr'
 }
 
 processResources {

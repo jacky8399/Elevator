@@ -1,11 +1,13 @@
 package com.jacky8399.elevator;
 
+import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.World;
 import org.bukkit.entity.Display;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.File;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -16,6 +18,7 @@ public final class Elevator extends JavaPlugin {
 
     public static Logger LOGGER;
 
+    public static BukkitAudiences ADVNTR;
 
     public static Set<List<ElevatorBlock>> mustCleanupList = new HashSet<>();
     public static Set<Display> mustCleanup = Collections.newSetFromMap(new WeakHashMap<>());
@@ -25,8 +28,11 @@ public final class Elevator extends JavaPlugin {
     public void onEnable() {
         INSTANCE = this;
         LOGGER = getLogger();
+        ADVNTR = BukkitAudiences.create(this);
 
         saveDefaultConfig();
+        if (!new File(getDataFolder(), "messages.yml").exists())
+            saveResource("messages.yml", false);
         reloadConfig();
 
         getCommand("elevator").setExecutor(new CommandElevator());
@@ -70,6 +76,10 @@ public final class Elevator extends JavaPlugin {
             display.remove();
         }
         mustCleanup.clear();
+        if (ADVNTR != null) {
+            ADVNTR.close();
+            ADVNTR = null;
+        }
     }
 
     @Override
@@ -81,6 +91,7 @@ public final class Elevator extends JavaPlugin {
 
         super.reloadConfig();
         Config.reload();
+        Messages.reload();
 
         getConfig().options().copyDefaults(true).parseComments(true);
 
