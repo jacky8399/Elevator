@@ -726,6 +726,7 @@ public class ElevatorController {
     }
 
     void doMove() {
+        boolean debug = Config.debug;
         movementTime--;
         long elapsed = world.getGameTime() - movementStartTick;
         boolean doTeleport = elapsed % 10 == 0;
@@ -764,7 +765,7 @@ public class ElevatorController {
             if (doTeleport || mustTeleport) { // hanging entities cannot have velocity (I think)
                 // force synchronize location
                 if (Math.abs(expectedY - y) > 0.5 || mustTeleport) {
-                    if (Config.debug && !mustTeleport) {
+                    if (debug && !mustTeleport) {
                         debug(("Player: %s, offset: %.2f, cabin Y: %.2f, expected Y: %.4f\n" +
                                 "actual Y: %.4f (location: %.2f, velocity: %.2f)").formatted(
                                 entity.getName(), offset, cabinMinY, expectedY,
@@ -781,12 +782,15 @@ public class ElevatorController {
             }
             velocity.setY(entityYVel);
             entity.setVelocity(velocity);
-            world.spawnParticle(Particle.CRIT, temp, 0, 0, 0, 0, 0);
+            if (debug)
+                world.spawnParticle(Particle.CRIT, temp, 0, 0, 0, 0, 0);
         }
         cabin.shift(delta);
 
-        world.spawnParticle(Particle.COMPOSTER, cabin.getMinX(), cabin.getMinY(), cabin.getMinZ(), 1);
-        world.spawnParticle(Particle.COMPOSTER, cabin.getMaxX(), cabin.getMaxY(), cabin.getMaxZ(), 1);
+        if (debug) {
+            world.spawnParticle(Particle.COMPOSTER, cabin.getMinX(), cabin.getMinY(), cabin.getMinZ(), 1);
+            world.spawnParticle(Particle.COMPOSTER, cabin.getMaxX(), cabin.getMaxY(), cabin.getMaxZ(), 1);
+        }
 
         refreshRope();
     }

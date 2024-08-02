@@ -54,6 +54,7 @@ public class Messages extends TranslatableComponentRenderer<Map<String, Componen
         String[] value();
     }
 
+    private static final MiniMessage MINI_MESSAGE = MiniMessage.miniMessage();
     public static void reload() {
         File file = new File(Elevator.INSTANCE.getDataFolder(), "messages.yml");
         YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
@@ -63,20 +64,22 @@ public class Messages extends TranslatableComponentRenderer<Map<String, Componen
             throw new RuntimeException(e);
         }
         // constants
+        var constantResolverBuilder = TagResolver.builder()
+                .tag("prefix", Tag.selfClosingInserting(
+                        MINI_MESSAGE.deserialize(Objects.requireNonNull(yaml.getString("prefix")))));
         ConfigurationSection constants = yaml.getConfigurationSection("__CONSTANTS");
-        TagResolver constantResolver = TagResolver.empty();
         if (constants != null) {
-            var builder = TagResolver.builder();
             for (var entry : constants.getValues(false).entrySet()) {
                 try {
                     // throws IllegalArgumentException
                     //noinspection PatternValidation
-                    builder.tag(entry.getKey(), Tag.preProcessParsed(entry.getValue().toString()));
+                    constantResolverBuilder.tag(entry.getKey(), Tag.preProcessParsed(entry.getValue().toString()));
                 } catch (IllegalArgumentException ex) {
                     Elevator.LOGGER.log(Level.WARNING, "Invalid message constant " + entry.getKey(), ex);
                 }
             }
         }
+        TagResolver constantResolver = constantResolverBuilder.build();
 
         for (Field field : Messages.class.getFields()) {
             Message annotation = field.getAnnotation(Message.class);
@@ -93,7 +96,7 @@ public class Messages extends TranslatableComponentRenderer<Map<String, Componen
             }) : TagResolver.empty();
 
             String message = yaml.getString(annotation.value());
-            Component component = message == null ? Component.empty() : MiniMessage.miniMessage().deserialize(message, constantResolver, tagResolver);
+            Component component = message == null ? Component.empty() : MINI_MESSAGE.deserialize(message, constantResolver, tagResolver);
 
             try {
                 field.set(null, component);
@@ -109,9 +112,6 @@ public class Messages extends TranslatableComponentRenderer<Map<String, Componen
             throw new RuntimeException(e);
         }
     }
-
-    @Message("prefix")
-    public static Component msgPrefix;
 
     @Message("error.not-in-elevator")
     public static Component msgErrorNotInElevator;
@@ -146,7 +146,7 @@ public class Messages extends TranslatableComponentRenderer<Map<String, Componen
     public static Component msgScanResult;
     @Message(value = "scan.scanned-floor", placeholders = {"name", "y"})
     public static Component msgScannedFloor;
-    @Message(value = "scanned-current-floor", placeholders = {"name", "y"})
+    @Message(value = "scan.scanned-current-floor", placeholders = {"name", "y"})
     public static Component msgScannedCurrentFloor;
 
     @Message("edit-cabin.instructions")

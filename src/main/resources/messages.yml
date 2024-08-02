@@ -3,11 +3,11 @@
 __CONSTANTS:
   edit_tool: <hover:show_item:slime_ball><green><lang:item.minecraft.slime_ball></green></hover>
 
-# Prefix for chat messages
+# Prefix for chat messages, will be available as the <prefix> placeholder in all messages
 prefix: "<#c9b994>[Elevator] "
 
 error:
-  not-in-elevator: '<dark_red>You are not in an elevator!'
+  not-in-elevator: '<prefix><dark_red>You are not in an elevator!'
 
 floors:
   please-scan-first: '<red>No floors found. Use <yellow>/elevator scan</yellow> to scan for floors.'
@@ -23,24 +23,24 @@ floors:
   default-floor-name: '<floor>/F'
 
   enter-floor-name: |-
-    <green>Enter new floor name
-    <blue>Current floor name: <yellow><floor_name><gray> (Enter to cancel editing)
+    <prefix><green>Enter new floor name
+    <prefix><blue>Current floor name: <yellow><floor_name><gray> (Enter to cancel editing)
 
-begin-maintenance: '<yellow>The elevator is now in maintenance.'
-end-maintenance: '<yellow>The elevator is no longer in maintenance.'
+begin-maintenance: '<prefix><yellow>The elevator is now in maintenance.'
+end-maintenance: '<prefix><yellow>The elevator is no longer in maintenance.'
 
 edit-cabin:
-  instructions: '<dark_aqua>Right click with a <edit_tool> to edit the cabin position.'
-  pos1: '<aqua>Right click the <yellow>first position</yellow> with a <edit_tool>.'
-  pos2: '<aqua>Right click the <yellow>second position</yellow> with a <edit_tool>.'
-  success: '<green>The cabin position has been updated.'
-  failed: '<red>The cabin position was not updated.'
+  instructions: '<prefix><dark_aqua>Right click with a <edit_tool> to edit the cabin position.'
+  pos1: '<prefix><aqua>Right click the <yellow>first position</yellow> with a <edit_tool>.'
+  pos2: '<prefix><aqua>Right click the <yellow>second position</yellow> with a <edit_tool>.'
+  success: '<prefix><green>The cabin position has been updated.'
+  failed: '<prefix><red>The cabin position was not updated.'
 
-cooldown: '<red>Stopping for <cooldown> seconds'
+cooldown: '<yellow>Stopping for <cooldown> seconds'
 maintenance: '<red>This elevator is in maintenance.'
 
 scan:
-  result: '<yellow>Found <floors> floors:'
+  result: '<prefix><yellow>Found <floors> floors:'
   # Placeholders: <name>, <y>
   scanned-floor: '- <name> @ Y=<y>'
   scanned-current-floor: '> <name> @ Y=<y>'

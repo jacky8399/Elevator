@@ -19,6 +19,7 @@ import org.bukkit.conversations.ConversationContext;
 import org.bukkit.conversations.ConversationFactory;
 import org.bukkit.conversations.Prompt;
 import org.bukkit.conversations.StringPrompt;
+import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -37,6 +38,7 @@ import org.bukkit.util.BoundingBox;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
 import java.util.Map;
 
 import static com.jacky8399.elevator.Elevator.ADVNTR;
@@ -48,7 +50,7 @@ public class Events implements Listener {
         if (!ItemUtils.isControllerItem(e.getItemInHand()))
             return;
         Block block = e.getBlock();
-        block.setBlockData(Material.DROPPER.createBlockData(data -> ((Directional) data).setFacing(BlockFace.DOWN)));
+        block.setBlockData(ElevatorController.MATERIAL.createBlockData(data -> ((Directional) data).setFacing(BlockFace.DOWN)));
 
         ElevatorController controller = new ElevatorController(block.getWorld(), block, BoundingBox.of(
                 block.getRelative(-1, -4, -1),
@@ -57,7 +59,9 @@ public class Events implements Listener {
         controller.save();
         ElevatorManager.elevators.put(block, controller);
 
-        controller.showOutline(e.getPlayer());
+        Player player = e.getPlayer();
+        ADVNTR.player(player).sendMessage(msgEditCabinInstructions);
+        controller.showOutline(player);
 
     }
 
@@ -70,8 +74,8 @@ public class Events implements Listener {
         Block block = e.getClickedBlock();
         ElevatorController controller = ElevatorManager.elevators.get(block);
         if (controller != null) {
-            e.setCancelled(true);
             if (!player.isSneaking()) {
+                e.setCancelled(true);
                 if (e.getMaterial() == Material.SLIME_BALL) {
                     audience.sendMessage(msgEditCabinPos1);
                     ElevatorManager.playerEditingElevator.put(player, controller);
@@ -179,11 +183,11 @@ public class Events implements Listener {
         ElevatorManager.playerElevatorCache.remove(e.getPlayer());
     }
 
+    // block redstone signal to managed doors
     @EventHandler
     public void onBlockRedstone(BlockRedstoneEvent e) {
         Block block = e.getBlock();
-        if (ElevatorManager.managedDoors.containsKey(block)) {
-            Openable data = (Openable) block.getBlockData();
+        if (ElevatorManager.managedDoors.containsKey(block) && block.getBlockData() instanceof Openable data) {
             e.setNewCurrent(data.isOpen() ? 15 : 0);
         }
     }
@@ -212,13 +216,20 @@ public class Events implements Listener {
         // check if rope
         Block block = e.getBlock();
         BlockState state = e.getBlockState();
-        if (!Config.elevatorRopeBlock.matches(state.getBlockData()))
-            return;
-        // scan up to try to find the controller
-        var controller = doRopeScan(block);
+        ElevatorController controller = ElevatorManager.elevators.get(block);
         if (controller != null) {
-            e.setCancelled(true);
-            controller.removeRope();
+            List<Item> drops = e.getItems();
+            drops.clear();
+            drops.add(block.getWorld().dropItemNaturally(block.getLocation().add(0.5, 0.5, 0.5), ItemUtils.getControllerItem()));
+            controller.cleanUp();
+            ElevatorManager.removeElevator(controller);
+        } else if (Config.elevatorRopeBlock.matches(state.getBlockData())) {
+            // scan up to try to find the controller
+            controller = doRopeScan(block);
+            if (controller != null) {
+                e.setCancelled(true);
+                controller.removeRope();
+            }
         }
     }
 
