@@ -4,19 +4,20 @@ import com.jacky8399.elevator.utils.BlockUtils;
 import com.jacky8399.elevator.utils.MathUtils;
 import com.jacky8399.elevator.utils.PaperUtils;
 import com.jacky8399.elevator.utils.PlayerUtils;
+import net.kyori.adventure.platform.bukkit.BukkitComponentSerializer;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.ComponentSerializer;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.*;
-import org.bukkit.block.*;
-import org.bukkit.block.data.Bisected;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.BlockState;
+import org.bukkit.block.TileState;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Directional;
 import org.bukkit.block.data.type.Door;
 import org.bukkit.block.data.type.TrapDoor;
-import org.bukkit.block.sign.Side;
-import org.bukkit.block.sign.SignSide;
 import org.bukkit.entity.*;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataAdapterContext;
@@ -30,7 +31,6 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
-import java.util.Comparator;
 import java.util.*;
 import java.util.logging.Level;
 
@@ -58,8 +58,16 @@ public class ElevatorController {
     /** cabin entities and their Y offset relative to the cabin */
     Map<Entity, Double> cabinEntities;
 
+    /** The floors available, in ascending Y order */
     List<ElevatorFloor> floors = new ArrayList<>();
     int currentFloorIdx = 1;
+
+    /**
+     * An elevator floor
+     * @param name The floor name
+     * @param y Where the cabin would be at
+     * @param source The source block of the floor
+     */
     record ElevatorFloor(Component name, int y, @Nullable Block source) {}
 
     Map<Integer, Component> floorNameOverrides = new HashMap<>();
@@ -109,7 +117,7 @@ public class ElevatorController {
     public void mobilize() {
         if (moving)
             return;
-        setNearbyDoors(false);
+        setNearbyDoors(cabin, false);
 
         int minX = (int) cabin.getMinX();
         int minY = (int) cabin.getMinY();
@@ -308,9 +316,6 @@ public class ElevatorController {
             Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, runnable, 2);
         }
 
-
-        double cabinMinY = cabin.getMinY();
-
         for (var entry : cabinEntities.entrySet()) {
             Entity entity = entry.getKey();
             double offset = entry.getValue();
@@ -318,7 +323,7 @@ public class ElevatorController {
             onLeaveCabin(entity, location, offset);
         }
         cabinEntities.clear();
-        setNearbyDoors(true);
+        setNearbyDoors(cabin, true);
 
         velocity = null;
         moving = false;
@@ -341,45 +346,29 @@ public class ElevatorController {
         PaperUtils.teleport(entity, location);
     }
 
-    private void setNearbyDoors(boolean state) {
+    private void setNearbyDoors(BoundingBox cabin, boolean open) {
         // funky way to toggle doors
-        List<Block> visited = new ArrayList<>();
+        List<Block> oldDoors = List.copyOf(managedDoors);
+        Set<Block> visited = new HashSet<>();
         BoundingBox doorBox = cabin.clone().expand(1, 1, 1);
         BlockUtils.forEachBlock(world, doorBox, block -> {
             BlockData data = block.getBlockData();
-            boolean shouldManage = false;
-            if (data instanceof Door door) {
-                shouldManage = true;
-                door.setOpen(state);
-                door.setPowered(false);
-                block.setBlockData(door, false);
-
-                if (door.getHalf() == Bisected.Half.BOTTOM)
-                    world.playSound(block.getLocation(), state ? Sound.BLOCK_WOODEN_DOOR_OPEN : Sound.BLOCK_WOODEN_DOOR_CLOSE, 0.5f, 1);
-            } else if (data instanceof TrapDoor trapDoor) {
-                shouldManage = true;
-                trapDoor.setOpen(!state);
-                trapDoor.setPowered(false);
-                block.setBlockData(trapDoor, false);
-
-                world.playSound(block.getLocation(), state ? Sound.BLOCK_WOODEN_TRAPDOOR_OPEN : Sound.BLOCK_WOODEN_TRAPDOOR_CLOSE, 0.5f, 1);
-            }
-
+            boolean shouldManage = BlockUtils.isDoorLike(data);
             if (shouldManage) {
+                BlockUtils.setDoorLikeState(block, open);
                 visited.add(block);
                 if (managedDoors.add(block))
                     ElevatorManager.managedDoors.put(block, this);
             }
         });
-        // remove stale
-        var stale = new HashSet<>(managedDoors);
-        visited.forEach(stale::remove);
-        for (var staleDoor : stale) {
-            BlockData data = staleDoor.getBlockData();
+        // remove stale managed doors that are no longer door blocks
+        for (Block oldDoor : oldDoors) {
+            if (visited.contains(oldDoor)) continue;
+            BlockData data = oldDoor.getBlockData();
             // unmanage if no longer a door
             if (!(data instanceof Door || data instanceof TrapDoor)) {
-                ElevatorManager.managedDoors.remove(staleDoor);
-                managedDoors.remove(staleDoor);
+                ElevatorManager.managedDoors.remove(oldDoor);
+                managedDoors.remove(oldDoor);
             }
         }
     }
@@ -434,95 +423,87 @@ public class ElevatorController {
         int maxY = (int) cabin.getMaxY();
         int maxZ = (int) cabin.getMaxZ();
 
-        record FloorScanner(Block block, BlockFace face) {}
+        // 1. find scanners in the cabin
+        // faces represents the directions to check for floors
+        record FloorScanner(Block block, List<BlockFace> faces) {}
         List<FloorScanner> scanners = new ArrayList<>();
 
-        for (int j = minY; j < maxY; j++) {
-            for (int i = minX; i < maxX; i++) {
-                for (int k = minZ; k < maxZ; k++) {
-                    Block block = world.getBlockAt(i, j, k);
-
-                    if (block.getType() == Config.elevatorScannerBlock) {
-                        if (Config.elevatorScannerDirectional && block.getBlockData() instanceof Directional directional) {
-                            scanners.add(new FloorScanner(block, directional.getFacing()));
-                        } else {
-                            scanners.add(new FloorScanner(block, null));
-                        }
-                    }
-                }
+        BlockUtils.forEachBlock(world, cabin, block -> {
+            BlockData blockData = block.getBlockData();
+            if (blockData.getMaterial() == Config.elevatorScannerBlock) {
+                scanners.add(new FloorScanner(block,
+                        // check for directionality
+                        Config.elevatorScannerDirectional && blockData instanceof Directional directional ?
+                                // reject up and down
+                                directional.getFacing().getModY() == 0 ?
+                                        List.of(directional.getFacing()) :
+                                        List.of() :
+                                BlockUtils.XZ_CARDINALS
+                ));
             }
-        }
+        });
 
-        Location temp = controller.getLocation();
+        // 2. find the top and bottom of the elevator shaft
         int shaftTop = world.getMaxHeight(), shaftBottom = world.getMinHeight();
         for (int i = minX; i < maxX; i++) {
-            temp.setX(i);
             for (int k = minZ; k < maxZ; k++) {
-                temp.setZ(k);
-
-                temp.setY(minY - 1);
-                int currentBottom = BlockUtils.rayTraceVertical(temp, false) + 1;
+                int currentBottom = BlockUtils.rayTraceVertical(world, i, minY - 1, k, false) + 1;
                 shaftBottom = Math.max(shaftBottom, currentBottom);
-
-                temp.setY(maxY);
-                int currentTop = BlockUtils.rayTraceVertical(temp, true);
+                int currentTop = BlockUtils.rayTraceVertical(world, i, maxY, k, true);
                 shaftTop = Math.min(shaftTop, currentTop);
             }
         }
 
+        // 3. scan for floors
         floors.clear();
         if (scanners.isEmpty()) {
+            // 3a. No scanners: floors will be the top and bottom of the shaft, and the current Y level of the cabin
             currentFloorIdx = -1;
-            // no indicators, use top and bottom of the shaft
             int topLevel = shaftTop - maxY + minY;
-            int floor = 1;
-            if (shaftBottom != minY)
-                floors.add(new ElevatorFloor(Component.text(floor++), shaftBottom, null));
-            floors.add(new ElevatorFloor(Component.text(floor), minY, null));
-            currentFloorIdx = floor++ - 1;
-            if (topLevel != shaftBottom && topLevel != minY)
-                floors.add(new ElevatorFloor(Component.text(floor), topLevel, null));
+            int floor = 0;
+            if (shaftBottom != minY) { // 1/F
+                floors.add(new ElevatorFloor(Messages.defaultFloorName(floor++), shaftBottom, null));
+            }
+            // 2/F
+            floors.add(new ElevatorFloor(Messages.defaultFloorName(floor), minY, null));
+            currentFloorIdx = floor++;
+            // 3/F
+            if (topLevel != shaftBottom && topLevel != minY) // add top of the shaft if necessary
+                floors.add(new ElevatorFloor(Messages.defaultFloorName(floor), topLevel, null));
             if (Config.debug)
                 debug("No scanner, floors: " + floors);
         } else {
+            // 3b. Has scanners: scan for floor blocks in each scanner's preferred direction
             record TempFloor(int cabinY, Block source, Component name) {}
             List<TempFloor> tempFloors = new ArrayList<>();
-            for (var scanner : scanners) {
+            for (FloorScanner scanner : scanners) {
                 int y = scanner.block.getY();
-                Location location = scanner.block.getRelative(scanner.face).getLocation();
-                for (int i = shaftBottom + y - minY, end = shaftTop - (maxY - y); i <= end; i++) {
-                    location.setY(i);
-                    Block block = location.getBlock();
-                    if (block.getType() == Config.elevatorFloorBlock) {
-                        if (Config.debug)
-                            debug("Found floor at " + block);
+                for (BlockFace face : scanner.faces) {
+                    Location location = scanner.block.getLocation().add(face.getModX(), face.getModY(), face.getModZ());
+                    for (int i = shaftBottom + y - minY, end = shaftTop - (maxY - y); i <= end; i++) {
+                        location.setY(i);
+                        Block block = location.getBlock();
+                        if (block.getType() == Config.elevatorFloorBlock) {
+                            if (Config.debug) debug("Found floor at " + block);
 
-                        Component floorName = floorNameOverrides.get(i); // look for a name override
-                        // else look for a sign and use it as the floor name
-                        if (floorName == null) {
-                            for (BlockFace face : BlockFace.values()) {
-                                Block side = block.getRelative(face);
-                                if (Tag.SIGNS.isTagged(side.getType())) {
-                                    Sign sign = (Sign) side.getState();
-
-                                    SignSide sign1 = sign.getSide(Side.FRONT);
-                                    // hahahaha
-                                    floorName = LegacyComponentSerializer.legacySection().deserialize(sign1.getLine(0));
-                                }
-                            }
+                            Component floorName = floorNameOverrides.get(i); // look for a name override
+                            // else look for a sign and use it as the floor name
+                            if (floorName == null)
+                                floorName = BlockUtils.findAdjacentSigns(block);
+                            tempFloors.add(new TempFloor(i - minY + y, block, floorName));
                         }
-                        tempFloors.add(new TempFloor(i - minY + y, block, floorName));
                     }
                 }
             }
-            tempFloors.sort(Comparator.comparingInt(tf -> -tf.cabinY));
-
+            // sort by ascending Y
+            tempFloors.sort(Comparator.comparingInt(tf -> tf.cabinY));
+            // find the current floor
             int closestFloorDist = world.getMaxHeight();
             int closestFloor = -1;
             for (int i = 0; i < tempFloors.size(); i++) {
                 TempFloor floor = tempFloors.get(i);
                 int floorY = floor.cabinY;
-                Component realName = floor.name != null ? floor.name : Messages.defaultFloorName(tempFloors.size() - i - 1);
+                Component realName = floor.name != null ? floor.name : Messages.defaultFloorName(i);
                 floors.add(new ElevatorFloor(realName, floorY, floor.source));
                 if (Math.abs(floorY - minY) < closestFloorDist) {
                     closestFloorDist = Math.abs(floorY - minY);
@@ -537,9 +518,13 @@ public class ElevatorController {
         var floorYs = new HashSet<Integer>();
         for (ElevatorFloor floor : floors) {
             floorYs.add(floor.y);
-            // add new floors to the global cache
+            // add new floor sources to the global cache
             if (floor.source != null)
                 ElevatorManager.managedFloors.put(floor.source, this);
+            // manage nearby doors
+            int shiftY = floor.y - (int) cabin.getMinY();
+            BoundingBox expectedCabin = cabin.clone().shift(0, shiftY, 0);
+            setNearbyDoors(expectedCabin, shiftY == 0); // open for current floor
         }
         // remove unused floor overrides
         floorNameOverrides.keySet().retainAll(floorYs);
@@ -553,13 +538,13 @@ public class ElevatorController {
 
         // check current floor and upper floor in case the current floor changed
         ElevatorFloor currentFloor = floors.get(this.currentFloorIdx);
-        if (currentFloor.y > minY) {
+        if (currentFloor.y < minY) {
             moveTo(currentFloor.y);
             return;
         }
 
-        if (this.currentFloorIdx != 0) {
-            ElevatorFloor upperFloor = floors.get(this.currentFloorIdx - 1);
+        if (this.currentFloorIdx != floors.size() - 1) {
+            ElevatorFloor upperFloor = floors.get(this.currentFloorIdx + 1);
             moveTo(upperFloor.y);
         }
     }
@@ -570,13 +555,13 @@ public class ElevatorController {
 
         // check current floor and lower floor in case the current floor changed
         ElevatorFloor currentFloor = floors.get(this.currentFloorIdx);
-        if (currentFloor.y < minY) {
+        if (currentFloor.y > minY) {
             moveTo(currentFloor.y);
             return;
         }
 
-        if (this.currentFloorIdx != floors.size() - 1) {
-            ElevatorFloor lowerFloor = floors.get(this.currentFloorIdx + 1);
+        if (this.currentFloorIdx != 0) {
+            ElevatorFloor lowerFloor = floors.get(this.currentFloorIdx - 1);
             moveTo(lowerFloor.y);
         }
     }
@@ -688,7 +673,7 @@ public class ElevatorController {
             if (true || cache == null || cache.floorIdx() == currentFloorIdx) {
                 if (jumping || player.isSneaking()) {
                     // move up or down a floor
-                    int newFloor = currentFloorIdx + (jumping ? -1 : 1);
+                    int newFloor = currentFloorIdx + (jumping ? 1 : -1);
                     if (newFloor >= 0 && newFloor < floors.size()) {
                         // reset the selection
                         ElevatorManager.playerElevatorCache.remove(player);
@@ -718,9 +703,9 @@ public class ElevatorController {
             }
 
             audience.sendActionBar(Messages.floorMessage(template,
-                    floorIdx != floors.size() - 1 ? floors.get(floorIdx + 1).name : null,
+                    floorIdx != 0 ? floors.get(floorIdx - 1).name : null,
                     floors.get(floorIdx).name,
-                    floorIdx != 0 ? floors.get(floorIdx - 1).name : null
+                    floorIdx != floors.size() - 1 ? floors.get(floorIdx + 1).name : null
             ));
         }
     }
@@ -764,7 +749,7 @@ public class ElevatorController {
             temp.setY(expectedY);
             if (doTeleport || mustTeleport) { // hanging entities cannot have velocity (I think)
                 // force synchronize location
-                if (Math.abs(expectedY - y) > 0.5 || mustTeleport) {
+                if (Math.abs(expectedY - (y + velocity.getY())) > 0.5 || mustTeleport) {
                     if (debug && !mustTeleport) {
                         debug(("Player: %s, offset: %.2f, cabin Y: %.2f, expected Y: %.4f\n" +
                                 "actual Y: %.4f (location: %.2f, velocity: %.2f)").formatted(
@@ -775,6 +760,7 @@ public class ElevatorController {
                     PaperUtils.teleport(entity, temp);
                 }
             }
+            entity.setFallDistance(0);
             entity.setGravity(false);
             if (entity instanceof Player player) {
                 PlayerUtils.setAllowFlight(player);
@@ -851,12 +837,18 @@ public class ElevatorController {
             cleanUp.addAll(cabinOutline);
             cleanUp.addAll(controllerOutline);
             for (var floor : floors) {
+                Location hologramLocation;
                 if (floor.source != null) {
-//                    Location location = floor.source.getLocation().toCenterLocation();
                     cleanUp.addAll(BlockUtils.createOutline(world, BoundingBox.of(floor.source), floor.source.getBlockData(), player, Color.YELLOW));
-//                    cleanUp.addAll(BlockUtils.createLine(location, controllerLoc.clone().subtract(location).toVector(),
-//                            (float) controllerLoc.distance(location), player, Color.GRAY));
+                    hologramLocation = floor.source.getLocation().add(0.5, 1.5, 0.5);
+                } else {
+                    hologramLocation = controllerLoc.clone();
+                    hologramLocation.setY(floor.y);
                 }
+                cleanUp.add(world.spawn(hologramLocation, TextDisplay.class, display -> {
+                    display.setBillboard(Display.Billboard.CENTER);
+                    display.setText(BukkitComponentSerializer.legacy().serialize(floor.name));
+                }));
             }
         } finally {
             Elevator.mustCleanup.addAll(cleanUp);

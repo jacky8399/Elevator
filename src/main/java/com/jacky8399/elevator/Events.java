@@ -197,7 +197,7 @@ public class Events implements Listener {
 
     }
 
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     public void onBlockDestroyed(BlockDestroyEvent e) {
         // check if rope
         Block block = e.getBlock();
@@ -211,7 +211,7 @@ public class Events implements Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     public void onBlockLoot(BlockDropItemEvent e) {
         // check if rope
         Block block = e.getBlock();

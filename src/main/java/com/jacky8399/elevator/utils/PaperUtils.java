@@ -10,32 +10,39 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 
 public class PaperUtils {
-    private static final Class<?> FLAG_CLAZZ;
+    private static final Object FLAGS;
     private static final MethodHandle TELEPORT_MH;
     static {
-        Class<?> flagClazz;
+        Object flags;
         MethodHandle mh;
         try {
-            flagClazz = Class.forName("io.papermc.paper.entity.TeleportFlag");
+            Class<?> flagClazz = Class.forName("io.papermc.paper.entity.TeleportFlag");
             var lookup = MethodHandles.lookup();
 
-            mh = lookup.findVirtual(Entity.class, "teleport", MethodType.methodType(boolean.class, Location.class, flagClazz.arrayType()));
+            flags = new TeleportFlag[] {
+                    TeleportFlag.EntityState.RETAIN_PASSENGERS, TeleportFlag.EntityState.RETAIN_VEHICLE,
+                    TeleportFlag.Relative.X, TeleportFlag.Relative.Z,
+                    TeleportFlag.Relative.YAW, TeleportFlag.Relative.PITCH,
+            };
+            mh = lookup.findVirtual(Entity.class, "teleport", MethodType.methodType(boolean.class, Location.class, flagClazz.arrayType()))
+                    .asFixedArity(); // don't use varargs as we already pass flags as an array
         } catch (Exception ex) {
-            flagClazz = null;
+            flags = null;
             mh = null;
             Elevator.LOGGER.warning("You are not using Paper. Paper allows much smoother teleportation and is highly recommended.");
         }
-        FLAG_CLAZZ = flagClazz;
+        FLAGS = flags;
         TELEPORT_MH = mh;
     }
 
     public static void teleport(Entity entity, Location location) {
         if (TELEPORT_MH != null) {
             // relative flags only matter for the player
-            entity.teleport(location,
-                    TeleportFlag.EntityState.RETAIN_PASSENGERS,
-                    TeleportFlag.Relative.X, TeleportFlag.Relative.Z,
-                    TeleportFlag.Relative.YAW, TeleportFlag.Relative.PITCH);
+            try {
+                TELEPORT_MH.invoke(entity, location, FLAGS);
+            } catch (Throwable throwable) {
+                throw new Error("Failed to teleport entity", throwable);
+            }
         } else {
             entity.teleport(location);
         }

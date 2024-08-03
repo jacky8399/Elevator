@@ -1,28 +1,115 @@
 package com.jacky8399.elevator.utils;
 
 import com.jacky8399.elevator.Elevator;
-import org.bukkit.Color;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.World;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.bukkit.*;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.Sign;
+import org.bukkit.block.data.Bisected;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Openable;
+import org.bukkit.block.data.Powerable;
+import org.bukkit.block.data.type.Door;
+import org.bukkit.block.data.type.Gate;
+import org.bukkit.block.data.type.TrapDoor;
+import org.bukkit.block.sign.Side;
+import org.bukkit.block.sign.SignSide;
 import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.Player;
 import org.bukkit.util.*;
+import org.jetbrains.annotations.Nullable;
 import org.joml.AxisAngle4d;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 public class BlockUtils {
 
     public static final Quaternionf NO_ROTATION = new Quaternionf();
     public static final Vector3f DEFAULT_SCALE = new Vector3f(1);
+
+    public static final List<BlockFace> XZ_CARDINALS = List.of(BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH, BlockFace.WEST);
+    public static final List<BlockFace> CARDINALS = List.of(BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH, BlockFace.WEST, BlockFace.UP, BlockFace.DOWN);
+
+    @Nullable
+    public static Component findAdjacentSigns(Block block) {
+        for (BlockFace face : CARDINALS) {
+            Block side = block.getRelative(face);
+            if (Tag.SIGNS.isTagged(side.getType())) {
+                Sign sign = (Sign) side.getState();
+
+                SignSide sign1 = sign.getSide(Side.FRONT);
+                // hahahaha
+                return LegacyComponentSerializer.legacySection().deserialize(sign1.getLine(0));
+            }
+        }
+        return null;
+    }
+
+    public static boolean isDoorLike(BlockData blockData) {
+        return blockData instanceof Door || blockData instanceof TrapDoor || blockData instanceof Gate;
+    }
+
+    public static void setDoorLikeState(Block block, boolean open) {
+        BlockData blockData = block.getBlockData();
+        if (!(blockData instanceof Openable openable && blockData instanceof Powerable powerable))
+            throw new IllegalArgumentException("Not a door-like block: " + block);
+        if (blockData instanceof TrapDoor)
+            open = !open; // flip open value for trap doors
+        boolean playSound = openable.isOpen() != open;
+        openable.setOpen(open);
+        powerable.setPowered(false);
+        block.setBlockData(blockData, false);
+
+        // only play door sound on bottom half
+        if (blockData instanceof Door door && door.getHalf() != Bisected.Half.BOTTOM)
+            playSound = false;
+        if (playSound)
+            block.getWorld().playSound(block.getLocation(), getDoorLikeSound(block.getType(), open), SoundCategory.BLOCKS,
+                    1, (float) Math.random() * 0.1f + 0.9f);
+    }
+
+    private static final Map<Material, Sound[]> doorLikeSoundCache = new HashMap<>();
+    public static Sound getDoorLikeSound(Material material, boolean open) {
+        return doorLikeSoundCache.computeIfAbsent(material, key -> {
+            BlockData blockData = key.createBlockData();
+            // evil sound key manipulation
+            // find the material type, which is usually consistent
+            // e.g. block.>copper<.break, block.>nether_wood<.break
+            String materialType = blockData.getSoundGroup().getBreakSound().getKey().getKey().split("\\.", 3)[1];
+            if (materialType.equals("metal"))
+                materialType = "iron"; // of course there are exceptions
+            String doorType = switch (blockData) {
+                case Door ignored -> "door";
+                case TrapDoor ignored -> "trapdoor";
+                case Gate ignored -> "fence_gate";
+                default -> throw new IllegalArgumentException("Not a door-like block: " + blockData);
+            };
+            // the door sound is:
+            // block.<material>_<door>.open/close
+            NamespacedKey openSoundKey = NamespacedKey.minecraft("block." + materialType + "_" + doorType + ".open");
+            Sound openSound = Registry.SOUNDS.get(openSoundKey);
+            NamespacedKey closeSoundKey = NamespacedKey.minecraft("block." + materialType + "_" + doorType + ".close");
+            Sound closeSound = Registry.SOUNDS.get(closeSoundKey);
+            if (openSound == null) {
+                Elevator.LOGGER.warning("Failed to find open sound for " + blockData + "(" + openSoundKey + "), falling back to wooden door");
+                openSound = Sound.BLOCK_WOODEN_DOOR_OPEN;
+            }
+            if (closeSound == null) {
+                Elevator.LOGGER.warning("Failed to find close sound for " + blockData + "(" + closeSoundKey + "), falling back to wooden door");
+                closeSound = Sound.BLOCK_WOODEN_DOOR_CLOSE;
+            }
+            return new Sound[] {openSound, closeSound};
+        })[open ? 0 : 1];
+    }
 
     public static float getLowestPoint(Block block) {
         VoxelShape shape = block.getCollisionShape();
@@ -43,13 +130,9 @@ public class BlockUtils {
         return max;
     }
 
-    public static int rayTraceVertical(Location location, boolean up) {
+    public static int rayTraceVertical(World world, int x, int y, int z, boolean up) {
         int modY = up ? 1 : -1;
-        World world = location.getWorld();
         int bounds = up ? world.getMaxHeight() : world.getMinHeight() - 1;
-        int x = location.getBlockX();
-        int y = location.getBlockY();
-        int z = location.getBlockZ();
         int deltaY = 0;
         while (deltaY != 200 && y != bounds) {
             Block block = world.getBlockAt(x, y, z);
@@ -77,7 +160,6 @@ public class BlockUtils {
         int maxX = (int) box.getMaxX();
         int maxY = (int) box.getMaxY();
         int maxZ = (int) box.getMaxZ();
-
 
         for (int j = minY; j < maxY; j++) {
             for (int i = minX; i < maxX; i++) {

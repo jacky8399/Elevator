@@ -133,11 +133,12 @@ public class CommandElevator implements TabExecutor {
                 ElevatorController controller = cache.controller();
                 controller.scanFloors();
                 audience.sendMessage(renderMessage(msgScanResult, Map.of("floors", Component.text(controller.floors.size()))));
-                for (int i = 0; i < controller.floors.size(); i++) {
+                // show messages in descending order for sensible result in chat
+                for (int i = controller.floors.size() - 1; i >= 0; i--) {
                     var floor = controller.floors.get(i);
                     audience.sendMessage(renderMessage(i == controller.currentFloorIdx ? msgScannedCurrentFloor : msgScannedFloor, Map.of(
                             "name", floor.name(),
-                            "x", Component.text(floor.y())
+                            "y", Component.text(floor.y())
                     )));
                 }
             }
