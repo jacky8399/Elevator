@@ -74,6 +74,12 @@ public class ElevatorController {
 
     /** How fast the elevator moves, in blocks per second */
     int speed = DEFAULT_SPEED;
+    /**
+     * The maximum amount of blocks the cabin can travel
+     * (i.e. distance between controller.y and cabin.maxY)
+     * If non-zero, overrides {@link Config#elevatorMaxHeight}
+      */
+    int maxHeight = 0;
 
     Vector velocity;
     long movementStartTick;
@@ -444,32 +450,35 @@ public class ElevatorController {
         });
 
         // 2. find the top and bottom of the elevator shaft
-        int shaftTop = world.getMaxHeight(), shaftBottom = world.getMinHeight();
+        int maxHeight = this.maxHeight != 0 ? this.maxHeight : Config.elevatorMaxHeight;
+        int shaftTop = controller.getY() - 1;
+        int shaftBottom = controller.getY() - maxHeight - (maxY - minY); // also account for the height of the cabin
         for (int i = minX; i < maxX; i++) {
             for (int k = minZ; k < maxZ; k++) {
-                int currentBottom = BlockUtils.rayTraceVertical(world, i, minY - 1, k, false) + 1;
+                int currentBottom = BlockUtils.rayTraceVertical(world, i, minY - 1, k, false, shaftBottom);
                 shaftBottom = Math.max(shaftBottom, currentBottom);
-                int currentTop = BlockUtils.rayTraceVertical(world, i, maxY, k, true);
+                int currentTop = BlockUtils.rayTraceVertical(world, i, maxY, k, true, shaftTop);
                 shaftTop = Math.min(shaftTop, currentTop);
+                if (Config.debug)
+                    debug("Shaft scanning for (%d,%d): from %d to %d".formatted(i, k, currentBottom, currentTop));
             }
         }
+        shaftTop++; // make shaftTop exclusive, similar to maxY
+        if (Config.debug)
+            debug("Shaft result: from %d to %d".formatted(shaftTop, shaftBottom));
 
         // 3. scan for floors
         floors.clear();
         if (scanners.isEmpty()) {
-            // 3a. No scanners: floors will be the top and bottom of the shaft, and the current Y level of the cabin
+            // 3a. No scanners: floors will be the top and bottom of the shaft
             currentFloorIdx = -1;
             int topLevel = shaftTop - maxY + minY;
-            int floor = 0;
-            if (shaftBottom != minY) { // 1/F
-                floors.add(new ElevatorFloor(Messages.defaultFloorName(floor++), shaftBottom, null));
-            }
+            // 1/F
+            if (shaftBottom != minY)
+                floors.add(new ElevatorFloor(Messages.defaultFloorName(0), shaftBottom, null));
             // 2/F
-            floors.add(new ElevatorFloor(Messages.defaultFloorName(floor), minY, null));
-            currentFloorIdx = floor++;
-            // 3/F
-            if (topLevel != shaftBottom && topLevel != minY) // add top of the shaft if necessary
-                floors.add(new ElevatorFloor(Messages.defaultFloorName(floor), topLevel, null));
+            if (topLevel != shaftBottom) // add top of the shaft if necessary
+                floors.add(new ElevatorFloor(Messages.defaultFloorName(1), topLevel, null));
             if (Config.debug)
                 debug("No scanner, floors: " + floors);
         } else {
@@ -478,13 +487,24 @@ public class ElevatorController {
             List<TempFloor> tempFloors = new ArrayList<>();
             for (FloorScanner scanner : scanners) {
                 int y = scanner.block.getY();
+                int start = shaftBottom + y - minY;
+                int end = shaftTop - (maxY - y);
+                if (Config.debug) {
+                    debug("Scanner at (%d,%d,%d) will scan from %d to %d".formatted(scanner.block.getX(), scanner.block.getY(), scanner.block.getZ(), start, end));
+                    if (CommandElevator.scanner != null) {
+                        List<BlockDisplay> cleanup = BlockUtils.createLargeOutline(world, new BoundingBox(
+                                scanner.block.getX(), start, scanner.block.getZ(),
+                                scanner.block.getX() + 1, end + 1, scanner.block.getZ() + 1
+                        ), CommandElevator.scanner, Color.ORANGE);
+                        BlockUtils.ensureCleanUp(cleanup, 10 * 20);
+                    }
+                }
                 for (BlockFace face : scanner.faces) {
                     Location location = scanner.block.getLocation().add(face.getModX(), face.getModY(), face.getModZ());
-                    for (int i = shaftBottom + y - minY, end = shaftTop - (maxY - y); i <= end; i++) {
+                    for (int i = start; i <= end; i++) {
                         location.setY(i);
                         Block block = location.getBlock();
                         if (block.getType() == Config.elevatorFloorBlock) {
-                            if (Config.debug) debug("Found floor at " + block);
 
                             Component floorName = floorNameOverrides.get(i); // look for a name override
                             // else look for a sign and use it as the floor name
@@ -511,9 +531,6 @@ public class ElevatorController {
                 }
             }
             currentFloorIdx = closestFloor;
-
-            if (Config.debug)
-                debug("Floors: " + floors + ", current: " + currentFloorIdx);
         }
         var floorYs = new HashSet<Integer>();
         for (ElevatorFloor floor : floors) {
@@ -569,6 +586,8 @@ public class ElevatorController {
 
     private static final int DEFAULT_SPEED = 5;
     private void moveTo(int y) {
+        if (maintenance)
+            return;
         int yDiff = y - (int) cabin.getMinY();
         if (yDiff == 0 || moving)
             return;
@@ -742,7 +761,7 @@ public class ElevatorController {
             }
 
             Vector velocity = entity.getVelocity();
-            boolean mustTeleport = entity instanceof ItemFrame;
+            boolean mustTeleport = !(entity instanceof Player);
 
             double y = temp.getY();
             double expectedY = cabinMinY + offset;
@@ -756,6 +775,9 @@ public class ElevatorController {
                                 entity.getName(), offset, cabinMinY, expectedY,
                                 y, temp.getY(), velocity.getY()
                         ));
+                    }
+                    if (entity instanceof LivingEntity) { // LivingEntities interpolate their movement over 3 ticks
+                        temp.setY(cabinMinY + offset + velocity.getY() * 3);
                     }
                     PaperUtils.teleport(entity, temp);
                 }
@@ -846,18 +868,14 @@ public class ElevatorController {
                     hologramLocation.setY(floor.y);
                 }
                 cleanUp.add(world.spawn(hologramLocation, TextDisplay.class, display -> {
+                    display.setSeeThrough(true);
                     display.setBillboard(Display.Billboard.CENTER);
+                    display.setDefaultBackground(true);
                     display.setText(BukkitComponentSerializer.legacy().serialize(floor.name));
                 }));
             }
         } finally {
-            Elevator.mustCleanup.addAll(cleanUp);
-            Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
-                cleanUp.forEach(entity -> {
-                    entity.remove();
-                    Elevator.mustCleanup.remove(entity);
-                });
-            }, 10 * 20);
+            BlockUtils.ensureCleanUp(cleanUp, 10 * 20);
         }
     }
     
@@ -883,6 +901,7 @@ public class ElevatorController {
         private static final NamespacedKey FLOOR_NAMES_KEY = key("floor_names");
         private static final NamespacedKey MAINTENANCE_KEY = key("maintenance");
         private static final NamespacedKey SPEED_KEY = key("speed");
+        private static final NamespacedKey MAX_DISTANCE_KEY = key("max_distance");
 
         @NotNull
         @Override
@@ -919,6 +938,9 @@ public class ElevatorController {
             if (complex.speed != DEFAULT_SPEED) {
                 container.set(SPEED_KEY, INTEGER, complex.speed);
             }
+            if (complex.maxHeight != 0) {
+                container.set(MAX_DISTANCE_KEY, INTEGER, complex.maxHeight);
+            }
             return container;
         }
 
@@ -930,30 +952,14 @@ public class ElevatorController {
             return switch (dataVersion) {
                 case null -> throw new IllegalArgumentException("Missing data version");
                 case 1 -> fromPrimitiveV2(primitive, LegacyComponentSerializer.legacySection());
-                case 2 -> {
-                    int[] cabinCoords = primitive.get(CABIN_KEY, INTEGER_ARRAY);
-                    BoundingBox box = new BoundingBox(cabinCoords[0], cabinCoords[1], cabinCoords[2], cabinCoords[3], cabinCoords[4], cabinCoords[5]);
-                    var controller = new ElevatorController(box);
-
-                    var floorNames = primitive.get(FLOOR_NAMES_KEY, TAG_CONTAINER);
-                    if (floorNames != null) {
-                        for (NamespacedKey key : floorNames.getKeys()) {
-                            int y = Integer.parseInt(key.getKey());
-                            String legacy = Objects.requireNonNull(floorNames.get(key, STRING));
-                            controller.floorNameOverrides.put(y, GsonComponentSerializer.gson().deserialize(legacy));
-                        }
-                    }
-                    controller.maintenance = primitive.getOrDefault(MAINTENANCE_KEY, BOOLEAN, false);
-                    controller.speed = primitive.getOrDefault(SPEED_KEY, INTEGER, DEFAULT_SPEED);
-                    yield controller;
-                }
+                case 2 -> fromPrimitiveV2(primitive, GsonComponentSerializer.gson());
                 default -> throw new IllegalArgumentException("Invalid data version " + dataVersion);
             };
         }
 
         private static ElevatorController fromPrimitiveV2(PersistentDataContainer primitive,
                                                           ComponentSerializer<? super Component, ? extends Component, String> serializer) {
-            int[] cabinCoords = primitive.get(CABIN_KEY, INTEGER_ARRAY);
+            int[] cabinCoords = Objects.requireNonNull(primitive.get(CABIN_KEY, INTEGER_ARRAY));
             BoundingBox box = new BoundingBox(cabinCoords[0], cabinCoords[1], cabinCoords[2], cabinCoords[3], cabinCoords[4], cabinCoords[5]);
             var controller = new ElevatorController(box);
 
@@ -967,6 +973,7 @@ public class ElevatorController {
             }
             controller.maintenance = primitive.getOrDefault(MAINTENANCE_KEY, BOOLEAN, false);
             controller.speed = primitive.getOrDefault(SPEED_KEY, INTEGER, DEFAULT_SPEED);
+            controller.maxHeight = primitive.getOrDefault(MAX_DISTANCE_KEY, INTEGER, 0);
             return controller;
         }
     }

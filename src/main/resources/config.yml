@@ -2,6 +2,8 @@ elevator:
   # The cooldown in ticks
   cooldown: 60
   # How tall elevators can be
+  # Individual elevators can be adjusted to be taller
+  # with /elevator setmaxheight <max-height>
   max-height: 96
   # The rope block.
   # Most blocks should work, but it is recommended that you
@@ -11,6 +13,8 @@ elevator:
 
   # The floor scanner.
   scanner:
+    # Allow
+    allow-scannerless: true
     # The block type to scan from
     scanner-block: observer
     # If directional

@@ -19,7 +19,7 @@ public class ItemUtils {
     public static ItemStack getControllerItem() {
         ItemStack stack = new ItemStack(Material.PISTON);
         BlockDataMeta meta = (BlockDataMeta) stack.getItemMeta();
-        meta.setDisplayName(ChatColor.GREEN + "Elevator");
+        meta.setItemName(ChatColor.GREEN + "Elevator");
         meta.setBlockData(PISTON_DOWN);
         meta.getPersistentDataContainer().set(ELEVATOR_CONTROLLER, PersistentDataType.BOOLEAN, true);
         stack.setItemMeta(meta);

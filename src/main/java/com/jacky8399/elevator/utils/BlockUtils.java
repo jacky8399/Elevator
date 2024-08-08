@@ -130,17 +130,14 @@ public class BlockUtils {
         return max;
     }
 
-    public static int rayTraceVertical(World world, int x, int y, int z, boolean up) {
+    public static int rayTraceVertical(World world, int x, int y, int z, boolean up, int bounds) {
         int modY = up ? 1 : -1;
-        int bounds = up ? world.getMaxHeight() : world.getMinHeight() - 1;
-        int deltaY = 0;
-        while (deltaY != 200 && y != bounds) {
+        while (up ? y <= bounds : y >= bounds) {
             Block block = world.getBlockAt(x, y, z);
             if (block.getType() != Material.AIR) {
-                return y;
+                return y - modY;
             }
             y += modY;
-            deltaY++;
         }
         return y;
     }
@@ -174,6 +171,16 @@ public class BlockUtils {
 
     public static Transformation translateBy(Vector3f translation) {
         return new Transformation(translation, NO_ROTATION, DEFAULT_SCALE, NO_ROTATION);
+    }
+
+    public static void ensureCleanUp(List<? extends Display> displays, int delay) {
+        Elevator.mustCleanup.addAll(displays);
+        Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
+            for (Display display : displays) {
+                display.remove();
+                Elevator.mustCleanup.remove(display);
+            }
+        }, delay);
     }
 
     public static List<BlockDisplay> createOutline(World world, BoundingBox box, BlockData data, Player player, Color color) {
@@ -265,6 +272,7 @@ public class BlockUtils {
                 blockDisplay.setTransformation(transformation);
                 blockDisplay.setGlowing(true);
                 blockDisplay.setGlowColorOverride(color);
+                blockDisplay.setPersistent(false);
             });
             segments.add(display);
         }

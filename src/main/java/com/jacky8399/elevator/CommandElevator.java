@@ -5,6 +5,7 @@ import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
@@ -21,12 +22,34 @@ import static com.jacky8399.elevator.Elevator.ADVNTR;
 import static com.jacky8399.elevator.Messages.*;
 
 public class CommandElevator implements TabExecutor {
+    public static Player scanner; // debug
+
     private static boolean checkPermission(CommandSender sender, String perm) {
         if (!sender.hasPermission("elevator." + perm)) {
             sender.sendMessage(ChatColor.RED + "You don't have permission to do this.");
             return false;
         }
         return true;
+    }
+
+    private static ElevatorController checkElevator(Player player) {
+        ElevatorManager.PlayerElevator cache = ElevatorManager.playerElevatorCache.get(player);
+        if (cache != null) {
+            return cache.controller();
+        }
+        Block targetBlock = player.getTargetBlockExact(5);
+        if (targetBlock != null) {
+            ElevatorController targetController = ElevatorManager.elevators.get(targetBlock);
+            if (targetController != null) {
+                return targetController;
+            }
+            ElevatorController controllerFromFloor = ElevatorManager.managedFloors.get(targetBlock);
+            if (controllerFromFloor != null) {
+                return controllerFromFloor;
+            }
+        }
+        ADVNTR.player(player).sendMessage(msgErrorNotInElevator);
+        return null;
     }
 
     @Override
@@ -90,53 +113,47 @@ public class CommandElevator implements TabExecutor {
             case "maintenance" -> {
                 if (!checkPermission(player, "command.maintenance"))
                     return true;
-                var cache = ElevatorManager.playerElevatorCache.get(player);
-                if (cache == null) {
-                    audience.sendMessage(msgErrorNotInElevator);
+                var elevator = checkElevator(player);
+                if (elevator == null) {
                     return true;
                 }
-                ElevatorController controller = cache.controller();
-                controller.maintenance = !controller.maintenance;
-                Component message = controller.maintenance ? msgBeginMaintenance : msgEndMaintenance;
+                elevator.maintenance = !elevator.maintenance;
+                Component message = elevator.maintenance ? msgBeginMaintenance : msgEndMaintenance;
                 audience.sendMessage(message);
             }
             case "up" -> {
                 if (!checkPermission(player, "command.up"))
                     return true;
-                var cache = ElevatorManager.playerElevatorCache.get(player);
+                var cache = checkElevator(player);
                 if (cache == null) {
-                    audience.sendMessage(msgErrorNotInElevator);
                     return true;
                 }
-                ElevatorController controller = cache.controller();
-                controller.moveUp();
+                cache.moveUp();
             }
             case "down" -> {
                 if (!checkPermission(player, "command.down"))
                     return true;
-                var cache = ElevatorManager.playerElevatorCache.get(player);
+                var cache = checkElevator(player);
                 if (cache == null) {
-                    audience.sendMessage(msgErrorNotInElevator);
                     return true;
                 }
-                ElevatorController controller = cache.controller();
-                controller.moveDown();
+                cache.moveDown();
             }
             case "scan" -> {
                 if (!checkPermission(player, "command.scan"))
                     return true;
-                var cache = ElevatorManager.playerElevatorCache.get(player);
-                if (cache == null) {
-                    audience.sendMessage(msgErrorNotInElevator);
+                var elevator = checkElevator(player);
+                if (elevator == null) {
                     return true;
                 }
-                ElevatorController controller = cache.controller();
-                controller.scanFloors();
-                audience.sendMessage(renderMessage(msgScanResult, Map.of("floors", Component.text(controller.floors.size()))));
+                scanner = player;
+                elevator.scanFloors();
+                scanner = null;
+                audience.sendMessage(renderMessage(msgScanResult, Map.of("floors", Component.text(elevator.floors.size()))));
                 // show messages in descending order for sensible result in chat
-                for (int i = controller.floors.size() - 1; i >= 0; i--) {
-                    var floor = controller.floors.get(i);
-                    audience.sendMessage(renderMessage(i == controller.currentFloorIdx ? msgScannedCurrentFloor : msgScannedFloor, Map.of(
+                for (int i = elevator.floors.size() - 1; i >= 0; i--) {
+                    var floor = elevator.floors.get(i);
+                    audience.sendMessage(renderMessage(i == elevator.currentFloorIdx ? msgScannedCurrentFloor : msgScannedFloor, Map.of(
                             "name", floor.name(),
                             "y", Component.text(floor.y())
                     )));
@@ -181,6 +198,28 @@ public class CommandElevator implements TabExecutor {
                     player.sendMessage(ChatColor.YELLOW + "Please note that speeds that are not factors of 20 will never be supported.");
                 }
             }
+            case "setmaxheight" -> {
+                if (!checkPermission(player, "command.setmaxheight"))
+                    return true;
+                if (args.length != 2) {
+                    player.sendMessage(ChatColor.RED + "Usage: /" + label + " setmaxheight <speed>");
+                    return true;
+                }
+                int maxHeight;
+                try {
+                    maxHeight = Integer.parseInt(args[1]);
+                    if (maxHeight <= 0)
+                        throw new IllegalArgumentException("Max height must be greater than 0");
+                } catch (Exception ex) {
+                    player.sendMessage(ChatColor.RED + "Invalid height: " + ex.getMessage());
+                    return true;
+                }
+                var elevator = checkElevator(player);
+                if (elevator == null)
+                    return true;
+                elevator.maxHeight = maxHeight;
+                player.sendMessage(ChatColor.GREEN + "Set elevator max height to " + maxHeight + " blocks");
+            }
             default -> player.sendMessage(ChatColor.RED + "Unknown command " + args[0]);
         }
         return true;
@@ -191,7 +230,11 @@ public class CommandElevator implements TabExecutor {
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         List<String> strings = switch (args.length) {
             default -> List.of();
-            case 1 -> List.of("givecontroller", "up", "down", "scan", "maintenance", "resize");
+            case 1 -> List.of("givecontroller", "up", "down", "scan", "maintenance", "resize", "setspeed", "setmaxheight");
+            case 2 -> switch (args[0]) {
+                case "setspeed" -> List.of("1", "2", "4", "5", "10", "20");
+                default -> List.of();
+            };
         };
         return StringUtil.copyPartialMatches(args[args.length - 1], strings, new ArrayList<>());
     }
