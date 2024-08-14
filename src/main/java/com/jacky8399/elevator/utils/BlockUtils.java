@@ -1,11 +1,13 @@
 package com.jacky8399.elevator.utils;
 
+import com.jacky8399.elevator.Config;
 import com.jacky8399.elevator.Elevator;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.BlockState;
 import org.bukkit.block.Sign;
 import org.bukkit.block.data.Bisected;
 import org.bukkit.block.data.BlockData;
@@ -19,17 +21,17 @@ import org.bukkit.block.sign.SignSide;
 import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.*;
+import org.bukkit.util.Vector;
 import org.jetbrains.annotations.Nullable;
 import org.joml.AxisAngle4d;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Consumer;
+import java.util.logging.Level;
 
 public class BlockUtils {
 
@@ -142,12 +144,22 @@ public class BlockUtils {
         return y;
     }
 
-    public static BlockVector toVector(Block block) {
-        return new BlockVector(block.getX(), block.getY(), block.getZ());
+    public static void dropItems(World world, Location location, BlockState state) {
+        PaperUtils.playBlockBreakEffect(world, location, state.getBlockData());
+        Collection<ItemStack> drops = PaperUtils.getDrops(world, location, state);
+        for (ItemStack drop : drops) {
+            world.dropItemNaturally(location, drop);
+        }
     }
 
-    public static Block fromVector(World world, Vector vector) {
-        return world.getBlockAt(vector.getBlockX(), vector.getBlockY(), vector.getBlockZ());
+    public static boolean unloadCatcher(World world, int blockX, int blockZ) {
+        if (!world.isChunkLoaded(blockX >> 4, blockZ >> 4)) {
+            if (Config.debug) {
+                Elevator.LOGGER.log(Level.WARNING, "Unloaded block iterated", new RuntimeException("Stack trace"));
+            }
+            return false;
+        }
+        return true;
     }
 
     public static void forEachBlock(World world, BoundingBox box, Consumer<Block> consumer) {
@@ -161,8 +173,9 @@ public class BlockUtils {
         for (int j = minY; j < maxY; j++) {
             for (int i = minX; i < maxX; i++) {
                 for (int k = minZ; k < maxZ; k++) {
+                    if (!unloadCatcher(world, i, k))
+                        continue;
                     Block block = world.getBlockAt(i, j, k);
-
                     consumer.accept(block);
                 }
             }

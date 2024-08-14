@@ -1,3 +1,5 @@
+import io.papermc.paperweight.userdev.ReobfArtifactConfiguration
+
 plugins {
     id("io.github.goooler.shadow") version "8.1.8"
     id 'java'
@@ -12,10 +14,6 @@ repositories {
 //    maven {
 //        name = "spigotmc-repo"
 //        url = "https://hub.spigotmc.org/nexus/content/repositories/snapshots/"
-//    }
-//    maven {
-//        name = "sonatype"
-//        url = "https://oss.sonatype.org/content/groups/public/"
 //    }
     maven {
         url = 'https://repo.papermc.io/repository/maven-public/'
@@ -36,17 +34,16 @@ dependencies {
     compileOnly 'org.jetbrains:annotations:24.0.1'
 }
 
+// NMS isn't used
+paperweight.reobfArtifactConfiguration = ReobfArtifactConfiguration.getMOJANG_PRODUCTION()
+
 tasks {
     compileJava {
         options.release.set(21)
         options.encoding = 'UTF-8'
     }
 
-    assemble {
-        dependsOn reobfJar
-    }
-
-    reobfJar {
+    build {
         dependsOn shadowJar
     }
 }

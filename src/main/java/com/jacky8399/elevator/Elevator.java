@@ -1,5 +1,7 @@
 package com.jacky8399.elevator;
 
+import com.jacky8399.elevator.animation.ElevatorAnimation;
+import com.jacky8399.elevator.animation.TransformationAnimation;
 import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
@@ -20,6 +22,8 @@ public final class Elevator extends JavaPlugin {
 
     public static BukkitAudiences ADVNTR;
 
+    public static ElevatorAnimation.Factory<?> SCHEDULER;
+
     public static Set<List<ElevatorBlock>> mustCleanupList = new HashSet<>();
     public static Set<Display> mustCleanup = Collections.newSetFromMap(new WeakHashMap<>());
     public static boolean disabling;
@@ -29,6 +33,7 @@ public final class Elevator extends JavaPlugin {
         INSTANCE = this;
         LOGGER = getLogger();
         ADVNTR = BukkitAudiences.create(this);
+        SCHEDULER = TransformationAnimation.FACTORY;
 
         saveDefaultConfig();
         if (!new File(getDataFolder(), "messages.yml").exists())
