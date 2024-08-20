@@ -7,7 +7,11 @@ __CONSTANTS:
 prefix: "<#c9b994>[Elevator] "
 
 error:
+  # Used in commands when the player isn't in or looking at an elevator
   not-in-elevator: '<prefix><dark_red>You are not in an elevator!'
+  # Used in holograms when an elevator has no scanners as required in config.yml
+  # Placeholders: <scanner_block>, <floor_block>
+  elevator-scanner-not-found: '<dark_red>Your elevator needs <scanner_block>s'
 
 floors:
   please-scan-first: '<red>No floors found. Use <yellow>/elevator scan</yellow> to scan for floors.'

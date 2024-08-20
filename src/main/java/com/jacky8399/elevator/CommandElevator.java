@@ -1,5 +1,7 @@
 package com.jacky8399.elevator;
 
+import com.jacky8399.elevator.utils.BlockUtils;
+import com.jacky8399.elevator.utils.FloorScan;
 import com.jacky8399.elevator.utils.ItemUtils;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
@@ -9,6 +11,7 @@ import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
+import org.bukkit.entity.Display;
 import org.bukkit.entity.Player;
 import org.bukkit.util.StringUtil;
 import org.jetbrains.annotations.NotNull;
@@ -16,7 +19,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import static com.jacky8399.elevator.Elevator.ADVNTR;
 import static com.jacky8399.elevator.Messages.*;
@@ -147,17 +149,13 @@ public class CommandElevator implements TabExecutor {
                     return true;
                 }
                 scanner = player;
-                elevator.scanFloors();
+                FloorScan result = elevator.scanFloors();
                 scanner = null;
-                audience.sendMessage(renderMessage(msgScanResult, Map.of("floors", Component.text(elevator.floors.size()))));
-                // show messages in descending order for sensible result in chat
-                for (int i = elevator.floors.size() - 1; i >= 0; i--) {
-                    var floor = elevator.floors.get(i);
-                    audience.sendMessage(renderMessage(i == elevator.currentFloorIdx ? msgScannedCurrentFloor : msgScannedFloor, Map.of(
-                            "name", floor.name(),
-                            "y", Component.text(floor.y())
-                    )));
-                }
+                Component message = result.getMessage();
+                if (message != Component.empty())
+                    audience.sendMessage(message);
+                List<Display> displays = result.createDisplay(elevator, player);
+                BlockUtils.ensureCleanUp(displays, 10 * 20);
             }
             case "fixgravity" -> {
                 if (!checkPermission(player, "command.fixgravity"))
@@ -187,12 +185,10 @@ public class CommandElevator implements TabExecutor {
                     player.sendMessage(ChatColor.RED + "Invalid speed: " + ex.getMessage());
                     return true;
                 }
-                var cache = ElevatorManager.playerElevatorCache.get(player);
-                if (cache == null) {
-                    player.sendMessage(ChatColor.RED + "You are not in an elevator!");
+                var cache = checkElevator(player);
+                if (cache == null)
                     return true;
-                }
-                cache.controller().speed = speed;
+                cache.speed = speed;
                 player.sendMessage(ChatColor.GREEN + "Set elevator speed to " + speed + " blocks per second");
                 if (20 % speed != 0) {
                     player.sendMessage(ChatColor.YELLOW + "Please note that speeds that are not factors of 20 will never be supported.");

@@ -49,11 +49,6 @@ public class Messages extends TranslatableComponentRenderer<Map<String, Componen
         String[] placeholders() default {};
     }
 
-    @Retention(RetentionPolicy.RUNTIME)
-    private @interface Placeholders {
-        String[] value();
-    }
-
     private static final MiniMessage MINI_MESSAGE = MiniMessage.miniMessage();
     public static void reload() {
         File file = new File(Elevator.INSTANCE.getDataFolder(), "messages.yml");
@@ -115,6 +110,8 @@ public class Messages extends TranslatableComponentRenderer<Map<String, Componen
 
     @Message("error.not-in-elevator")
     public static Component msgErrorNotInElevator;
+    @Message(value = "error.elevator-scanner-not-found", placeholders = {"scanner_block", "floor_block"})
+    public static Component msgErrorScannerNotFound;
 
     @Message("floors.please-scan-first")
     public static Component msgNoFloors;

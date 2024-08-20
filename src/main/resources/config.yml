@@ -13,8 +13,8 @@ elevator:
 
   # The floor scanner.
   scanner:
-    # Allow
-    allow-scannerless: true
+    # Allow elevators without floor scanner blocks to use the top and bottom of the elevator shaft as floors
+    allow-no-scanner: true
     # The block type to scan from
     scanner-block: observer
     # If directional

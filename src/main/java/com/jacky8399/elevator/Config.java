@@ -24,6 +24,7 @@ public class Config {
     public static Material elevatorScannerBlock;
     public static BlockData elevatorRopeBlock;
     public static boolean elevatorScannerDirectional;
+    public static boolean elevatorScannerAllowScannerless;
 
     private static final Map<Integer, String> floorNameCache = new HashMap<>();
 
@@ -44,6 +45,7 @@ public class Config {
 
         var scanner = elevator.getConfigurationSection("scanner");
 
+        elevatorScannerAllowScannerless = scanner.getBoolean("allow-no-scanner");
         elevatorFloorBlock = getBlock(scanner, "floor-block");
         elevatorScannerBlock = getBlock(scanner, "scanner-block");
         elevatorScannerDirectional = scanner.getBoolean("scanner-directional");

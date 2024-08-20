@@ -155,7 +155,7 @@ public class BlockUtils {
     public static boolean unloadCatcher(World world, int blockX, int blockZ) {
         if (!world.isChunkLoaded(blockX >> 4, blockZ >> 4)) {
             if (Config.debug) {
-                Elevator.LOGGER.log(Level.WARNING, "Unloaded block iterated", new RuntimeException("Stack trace"));
+                Elevator.LOGGER.log(Level.WARNING, "Unloaded block accessed at " + blockX + "," + blockZ, new RuntimeException("Stack trace"));
             }
             return false;
         }

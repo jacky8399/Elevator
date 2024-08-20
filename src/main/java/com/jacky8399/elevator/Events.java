@@ -1,6 +1,5 @@
 package com.jacky8399.elevator;
 
-import com.destroystokyo.paper.event.block.BlockDestroyEvent;
 import com.jacky8399.elevator.utils.ItemUtils;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
@@ -24,10 +23,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.Action;
-import org.bukkit.event.block.BlockDropItemEvent;
-import org.bukkit.event.block.BlockPlaceEvent;
-import org.bukkit.event.block.BlockRedstoneEvent;
+import org.bukkit.event.block.*;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -156,17 +152,30 @@ public class Events implements Listener {
     }
 
     static void loadChunkElevators(Chunk chunk) {
+        int loaded = 0;
         for (BlockState state : chunk.getTileEntities()) {
             Block block = state.getBlock();
+            if (ElevatorManager.elevators.containsKey(block)) {
+                Elevator.LOGGER.warning("An elevator already exists at %d, %d, %d! Skipping...".formatted(block.getX(), block.getY(), block.getZ()));
+            }
             ElevatorController controller = ElevatorController.load(block, (TileState) state);
-            if (controller != null)
+            if (controller != null) {
                 ElevatorManager.elevators.put(block, controller);
+                loaded++;
+            }
+        }
+        if (Config.debug && loaded != 0) {
+            Elevator.LOGGER.info("Loaded %d elevators for chunk %d, %d".formatted(loaded, chunk.getX(), chunk.getZ()));
         }
     }
 
     @EventHandler
     public void onChunkUnload(ChunkUnloadEvent e) {
         Chunk chunk = e.getChunk();
+        if (!chunk.isLoaded()) {
+            Elevator.LOGGER.info("Chunk isn't loaded!!");
+            return;
+        }
         for (BlockState state : chunk.getTileEntities()) {
             Block block = state.getBlock();
             ElevatorController controller = ElevatorManager.elevators.remove(block);
@@ -198,7 +207,7 @@ public class Events implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onBlockDestroyed(BlockDestroyEvent e) {
+    public void onBlockDestroyed(BlockBreakEvent e) {
         // check if rope
         Block block = e.getBlock();
         if (!Config.elevatorRopeBlock.matches(block.getBlockData()))
