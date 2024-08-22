@@ -652,16 +652,17 @@ public class ElevatorController {
                 }
             }
             // player check
-            doPlayerTick();
+            doIdleTick();
         }
     }
 
-    private void doPlayerTick() {
+    private void doIdleTick() {
         var players = scanCabinPlayers();
         for (Player player : players) {
+            var audience = ADVNTR.player(player);
             if (currentFloorIdx == -1 || floors.isEmpty()) {
                 ElevatorManager.playerElevatorCache.put(player, new ElevatorManager.PlayerElevator(this, 0));
-//                player.sendActionBar(Config.msgNoFloors);
+                audience.sendActionBar(Messages.msgNoFloors);
                 continue;
             }
 
@@ -674,16 +675,18 @@ public class ElevatorController {
             // check for scrolling
             int floorIdx = currentFloorIdx;
 
-            var audience = ADVNTR.player(player);
             Component template;
             // TODO redo floor selection
-            if (true || cache == null || cache.floorIdx() == currentFloorIdx) {
+            if (cache == null || cache.controller() != this // previous selection doesn't apply
+                    || cache.floorDiff() == 0) {
                 if (jumping || player.isSneaking()) {
                     // move up or down a floor
                     int newFloor = currentFloorIdx + (jumping ? 1 : -1);
                     if (newFloor >= 0 && newFloor < floors.size()) {
-                        // reset the selection
-                        ElevatorManager.playerElevatorCache.remove(player);
+                        // reset all player selections
+                        for (Player cabinPlayer : scanCabinPlayers()) {
+                            ElevatorManager.playerElevatorCache.remove(cabinPlayer);
+                        }
 
                         currentFloorIdx = newFloor;
                         moveTo(floors.get(newFloor).y);
@@ -691,22 +694,31 @@ public class ElevatorController {
                     }
                 }
                 ElevatorManager.playerElevatorCache.put(player,
-                        new ElevatorManager.PlayerElevator(this, floorIdx));
+                        new ElevatorManager.PlayerElevator(this, 0));
 
                 template = Messages.msgCurrentFloor;
             } else {
-//                floorIdx = cache.floorIdx();
-//
-//                ElevatorFloor floor = floorIdx >= 0 && floorIdx < floors.size() ? floors.get(floorIdx) : null;
-//                if (floor != null && (jumping || player.isSneaking())) {
-//                    // reset the selection
-//                    ElevatorManager.playerElevatorCache.remove(player);
-//
-//                    currentFloorIdx = floorIdx;
-//                    moveTo(floor.y);
-//                }
-//
-//                rawMessage = Config.msgFloorTemplate;
+                int floorDiff = cache.floorDiff();
+                floorIdx = Math.floorMod(currentFloorIdx + floorDiff, floors.size());
+                ElevatorFloor floor = floors.get(floorIdx);
+                if (floor != null && (jumping || player.isSneaking())) {
+                    // reset all player selections
+                    for (Player cabinPlayer : scanCabinPlayers()) {
+                        ElevatorManager.playerElevatorCache.remove(cabinPlayer);
+                    }
+
+                    currentFloorIdx = floorIdx;
+                    moveTo(floor.y);
+                    return;
+                }
+                if (floorIdx == currentFloorIdx) {
+                    // wrap back to 0
+                    ElevatorManager.playerElevatorCache.put(player,
+                            new ElevatorManager.PlayerElevator(this, 0));
+                    template = Messages.msgCurrentFloor;
+                } else {
+                    template = Messages.msgFloor;
+                }
             }
 
             audience.sendActionBar(Messages.floorMessage(template,

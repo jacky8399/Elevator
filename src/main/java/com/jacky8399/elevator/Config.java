@@ -1,5 +1,7 @@
 package com.jacky8399.elevator;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -8,8 +10,6 @@ import org.bukkit.block.data.BlockData;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -23,13 +23,11 @@ public class Config {
     public static Material elevatorFloorBlock;
     public static Material elevatorScannerBlock;
     public static BlockData elevatorRopeBlock;
+    public static Component elevatorItemName;
     public static boolean elevatorScannerDirectional;
     public static boolean elevatorScannerAllowScannerless;
 
-    private static final Map<Integer, String> floorNameCache = new HashMap<>();
-
     public static void reload() {
-        floorNameCache.clear();
 
         FileConfiguration config = Elevator.INSTANCE.getConfig();
 
@@ -38,10 +36,9 @@ public class Config {
         ConfigurationSection elevator = config.getConfigurationSection("elevator");
 
         elevatorCooldown = elevator.getInt("cooldown");
-
         elevatorMaxHeight = elevator.getInt("max-height");
-
         elevatorRopeBlock = getBlockData(elevator, "rope-block");
+        elevatorItemName = MiniMessage.miniMessage().deserialize(Objects.requireNonNull(elevator.getString("item-name")));
 
         var scanner = elevator.getConfigurationSection("scanner");
 

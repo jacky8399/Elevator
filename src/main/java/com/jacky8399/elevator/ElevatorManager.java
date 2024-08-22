@@ -21,7 +21,7 @@ public class ElevatorManager {
         managedFloors.clear();
     }
 
-    public record PlayerElevator(ElevatorController controller, int floorIdx) {}
+    public record PlayerElevator(ElevatorController controller, int floorDiff) {}
     public static final WeakHashMap<Player, PlayerElevator> playerElevatorCache = new WeakHashMap<>();
 
     // temporary way to let players redefine elevators

@@ -111,7 +111,7 @@ public class Events implements Listener {
                                             controller.floors.set(i, new ElevatorController.ElevatorFloor(newFloorName, y, floor.source()));
                                         }
                                     }
-                                    player.sendMessage(newFloorName);
+                                    audience.sendMessage(newFloorName);
                                 }
                             }
                             return Prompt.END_OF_CONVERSATION;
@@ -203,7 +203,23 @@ public class Events implements Listener {
 
     @EventHandler
     public void onPlayerHotbar(PlayerItemHeldEvent e) {
-
+        int diff = e.getNewSlot() - e.getPreviousSlot();
+        int adjusted; // handle scrolling between slots 1 and 9
+        if (diff > 4)
+            adjusted = diff - 9;
+        else if (diff < -4)
+            adjusted = diff + 9;
+        else
+            adjusted = diff;
+        // when scrolling up, the difference would be negative
+        // since floors are stored in ascending Y order, we need to traverse in the opposite direction
+        adjusted = -adjusted;
+        Player player = e.getPlayer();
+        var oldElevator = ElevatorManager.playerElevatorCache.get(player);
+        if (oldElevator != null) {
+            ElevatorManager.playerElevatorCache.put(player, new ElevatorManager.PlayerElevator(oldElevator.controller(),
+                    oldElevator.floorDiff() + adjusted));
+        }
     }
 
     @EventHandler(ignoreCancelled = true)
