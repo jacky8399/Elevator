@@ -1,5 +1,6 @@
 package com.jacky8399.elevator;
 
+import com.jacky8399.elevator.utils.BlockInteraction;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
@@ -11,6 +12,7 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 public class Config {
@@ -26,6 +28,8 @@ public class Config {
     public static Component elevatorItemName;
     public static boolean elevatorScannerDirectional;
     public static boolean elevatorScannerAllowScannerless;
+    public static Set<BlockInteraction> interactionsCabin;
+    public static Set<BlockInteraction> interactionsExterior;
 
     public static void reload() {
 
@@ -46,6 +50,10 @@ public class Config {
         elevatorFloorBlock = getBlock(scanner, "floor-block");
         elevatorScannerBlock = getBlock(scanner, "scanner-block");
         elevatorScannerDirectional = scanner.getBoolean("scanner-directional");
+
+        var interactions = elevator.getConfigurationSection("interactions");
+        interactionsCabin = BlockInteraction.fromYaml(interactions.getConfigurationSection("cabin"));
+        interactionsExterior = BlockInteraction.fromYaml(interactions.getConfigurationSection("exterior"));
     }
 
     // Utilities

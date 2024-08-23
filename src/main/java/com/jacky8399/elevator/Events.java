@@ -12,8 +12,11 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.TileState;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Directional;
+import org.bukkit.block.data.Lightable;
 import org.bukkit.block.data.Openable;
+import org.bukkit.block.data.type.CopperBulb;
 import org.bukkit.conversations.ConversationContext;
 import org.bukkit.conversations.ConversationFactory;
 import org.bukkit.conversations.Prompt;
@@ -196,8 +199,14 @@ public class Events implements Listener {
     @EventHandler
     public void onBlockRedstone(BlockRedstoneEvent e) {
         Block block = e.getBlock();
-        if (ElevatorManager.managedDoors.containsKey(block) && block.getBlockData() instanceof Openable data) {
-            e.setNewCurrent(data.isOpen() ? 15 : 0);
+        if (ElevatorManager.managedDoors.containsKey(block)) {
+            BlockData data = block.getBlockData();
+            switch (data) {
+                case Openable openable -> e.setNewCurrent(openable.isOpen() ? 15 : 0);
+                case CopperBulb copperBulb -> e.setNewCurrent(0);
+                case Lightable lightable -> e.setNewCurrent(lightable.isLit() ? 15 : 0);
+                default -> {}
+            }
         }
     }
 

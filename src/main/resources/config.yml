@@ -1,3 +1,6 @@
+# The version of the configuration. Do not change.
+config-version: 1
+
 elevator:
   # The cooldown in ticks
   cooldown: 60
@@ -13,6 +16,43 @@ elevator:
 
   # The item name.
   item-name: <green>Elevator
+
+  # How the elevator interacts with blocks
+  interactions:
+    # Inside the cabin
+    cabin:
+      # Whether doors are closed when the elevator starts moving,
+      # and opened when it stops
+      doors: true
+      # Whether trapdoors will open and close like doors
+      # Trapdoors might be used as building blocks so this is off by default
+      trapdoors: false
+      # Whether fence gates will open and close like doors
+      gates: true
+      # Whether lights (redstone lamp/copper bulb) will turn off when the elevator starts moving
+      lights: false
+      # Note that signs do not work in moving elevators
+      signs: false
+      # Whether note blocks play when the elevator reaches any floor
+      note-blocks: true
+    # Outside the cabin, 1 block away
+    exterior:
+      # Whether doors are opened when the elevator arrives,
+      # and closed when it departs
+      doors: true
+      # Whether trapdoors will open and close like doors
+      trapdoors: true
+      # Whether fence gates will open and close like doors
+      gates: true
+      # Whether lights (redstone lamp/copper bulb) will turn on when the elevator arrives,
+      # and turn off when it departs
+      lights: true
+      # Whether signs are updated to show the closest floor
+      # Note that signs can also be considered in range if attached on a light that is also in range of the cabin
+      signs: true
+      # Whether note blocks play when the elevator arrives
+      note-blocks: true
+
 
   # The floor scanner.
   scanner:

@@ -13,17 +13,17 @@ import org.bukkit.block.data.Bisected;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Openable;
 import org.bukkit.block.data.Powerable;
-import org.bukkit.block.data.type.Door;
-import org.bukkit.block.data.type.Gate;
-import org.bukkit.block.data.type.TrapDoor;
+import org.bukkit.block.data.type.*;
 import org.bukkit.block.sign.Side;
 import org.bukkit.block.sign.SignSide;
 import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.util.*;
+import org.bukkit.util.BoundingBox;
+import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
+import org.bukkit.util.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 import org.joml.AxisAngle4d;
 import org.joml.Quaternionf;
@@ -56,12 +56,28 @@ public class BlockUtils {
         return null;
     }
 
+    public static boolean isSignAttached(Block block, BlockFace face) {
+        Block signBlock = block.getRelative(face);
+        return switch (signBlock.getBlockData()) {
+            case org.bukkit.block.data.type.Sign ignored -> face == BlockFace.UP;
+            case WallSign wallSign -> face == wallSign.getFacing();
+            case HangingSign ignored -> face == BlockFace.DOWN;
+            // wall hanging signs hanging from the north or south faces of a block
+            // will be either east or west
+            case WallHangingSign wallHangingSign -> switch (wallHangingSign.getFacing()) {
+                case NORTH, SOUTH -> face == BlockFace.EAST || face == BlockFace.WEST;
+                case EAST, WEST -> face == BlockFace.NORTH || face == BlockFace.SOUTH;
+                default -> false;
+            };
+            default -> false;
+        };
+    }
+
     public static boolean isDoorLike(BlockData blockData) {
         return blockData instanceof Door || blockData instanceof TrapDoor || blockData instanceof Gate;
     }
 
-    public static void setDoorLikeState(Block block, boolean open) {
-        BlockData blockData = block.getBlockData();
+    public static void setDoorLikeState(Block block, BlockData blockData, boolean open) {
         if (!(blockData instanceof Openable openable && blockData instanceof Powerable powerable))
             throw new IllegalArgumentException("Not a door-like block: " + block);
         if (blockData instanceof TrapDoor)
@@ -173,6 +189,28 @@ public class BlockUtils {
         for (int j = minY; j < maxY; j++) {
             for (int i = minX; i < maxX; i++) {
                 for (int k = minZ; k < maxZ; k++) {
+                    if (!unloadCatcher(world, i, k))
+                        continue;
+                    Block block = world.getBlockAt(i, j, k);
+                    consumer.accept(block);
+                }
+            }
+        }
+    }
+
+    public static void forEachBlockExcluding(World world, BoundingBox box, BoundingBox excludeBox, Consumer<Block> consumer) {
+        int minX = (int) box.getMinX();
+        int minY = (int) box.getMinY();
+        int minZ = (int) box.getMinZ();
+        int maxX = (int) box.getMaxX();
+        int maxY = (int) box.getMaxY();
+        int maxZ = (int) box.getMaxZ();
+
+        for (int j = minY; j < maxY; j++) {
+            for (int i = minX; i < maxX; i++) {
+                for (int k = minZ; k < maxZ; k++) {
+                    if (excludeBox.contains(i, j, k))
+                        continue;
                     if (!unloadCatcher(world, i, k))
                         continue;
                     Block block = world.getBlockAt(i, j, k);

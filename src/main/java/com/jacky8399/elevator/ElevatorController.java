@@ -4,18 +4,15 @@ import com.jacky8399.elevator.animation.ElevatorAnimation;
 import com.jacky8399.elevator.utils.*;
 import net.kyori.adventure.platform.bukkit.BukkitComponentSerializer;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.ComponentSerializer;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.*;
-import org.bukkit.block.Block;
-import org.bukkit.block.BlockFace;
-import org.bukkit.block.BlockState;
-import org.bukkit.block.TileState;
+import org.bukkit.block.*;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Directional;
-import org.bukkit.block.data.type.Door;
-import org.bukkit.block.data.type.TrapDoor;
+import org.bukkit.block.sign.Side;
 import org.bukkit.entity.*;
 import org.bukkit.persistence.PersistentDataAdapterContext;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -25,7 +22,9 @@ import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Comparator;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 
 import static com.jacky8399.elevator.Elevator.ADVNTR;
@@ -54,7 +53,8 @@ public class ElevatorController {
 
     /** The floors available, in ascending Y order */
     List<ElevatorFloor> floors = new ArrayList<>();
-    int currentFloorIdx = 1;
+    int currentFloorIdx = 0;
+    boolean signStale = true; // used by updateSign()
 
     /**
      * An elevator floor
@@ -104,6 +104,7 @@ public class ElevatorController {
     ElevatorAnimation animation;
 
     Set<Block> managedDoors = new HashSet<>();
+    Set<Block> managedSigns = new LinkedHashSet<>();
 
     public ElevatorController(@NotNull World world, @NotNull Block controller, @NotNull BoundingBox cabin) {
         this.world = world;
@@ -126,10 +127,11 @@ public class ElevatorController {
         return cabin;
     }
 
-//    private static final Vector BOUNDING_BOX_EPSILON = new Vector(0.05, 0.05, 0.05);
     private Collection<Entity> scanCabinEntities() {
         BoundingBox lenientBox = cabin.clone().expand(0.1, 0.1, 0.1, 0.1, -0.1, 0.1);
         return world.getNearbyEntities(lenientBox, e -> {
+            if (e instanceof Player player && player.getGameMode() == GameMode.SPECTATOR)
+                return false;
             // these entities might be safe to teleport
             return e instanceof LivingEntity || e instanceof Hanging || e instanceof Vehicle || e instanceof Item;
         });
@@ -139,6 +141,7 @@ public class ElevatorController {
         BoundingBox lenientBox = cabin.clone().expand(0.1, 0.1, 0.1, 0.1, -0.1, 0.1);
         var players = new ArrayList<Player>();
         for (var player : Bukkit.getOnlinePlayers()) {
+            if (player.getGameMode() == GameMode.SPECTATOR) continue;
             Location location = player.getLocation();
             if (lenientBox.contains(location.getX(), location.getY(), location.getZ())) {
                 players.add(player);
@@ -152,7 +155,7 @@ public class ElevatorController {
             return;
 
         try {
-            setNearbyDoors(cabin, false);
+            applyInteractions(cabin, false);
 
             int minX = (int) cabin.getMinX();
             int minY = (int) cabin.getMinY();
@@ -301,13 +304,15 @@ public class ElevatorController {
         }
 
         try {
-            setNearbyDoors(cabin, true);
+            applyInteractions(cabin, true);
         } catch (Exception ex) {
             LOGGER.log(Level.SEVERE, "Failed to toggle doors", ex);
         }
 
         velocity = null;
         moving = false;
+
+        updateSigns();
 
         if (!Elevator.disabling)
             refreshRope();
@@ -353,33 +358,6 @@ public class ElevatorController {
         animation.onLeaveCabin(this, entity);
     }
 
-    private void setNearbyDoors(BoundingBox cabin, boolean open) {
-        // funky way to toggle doors
-        List<Block> oldDoors = List.copyOf(managedDoors);
-        Set<Block> visited = new HashSet<>();
-        BoundingBox doorBox = cabin.clone().expand(1, 1, 1);
-        BlockUtils.forEachBlock(world, doorBox, block -> {
-            BlockData data = block.getBlockData();
-            boolean shouldManage = BlockUtils.isDoorLike(data);
-            if (shouldManage) {
-                BlockUtils.setDoorLikeState(block, open);
-                visited.add(block);
-                if (managedDoors.add(block))
-                    ElevatorManager.managedDoors.put(block, this);
-            }
-        });
-        // remove stale managed doors that are no longer door blocks
-        for (Block oldDoor : oldDoors) {
-            if (visited.contains(oldDoor)) continue;
-            BlockData data = oldDoor.getBlockData();
-            // unmanage if no longer a door
-            if (!(data instanceof Door || data instanceof TrapDoor)) {
-                ElevatorManager.managedDoors.remove(oldDoor);
-                managedDoors.remove(oldDoor);
-            }
-        }
-    }
-
     public void cleanUp() {
         immobilize();
         removeRope();
@@ -392,6 +370,9 @@ public class ElevatorController {
             if (floor.source != null)
                 ElevatorManager.managedFloors.remove(floor.source);
         }
+        managedDoors.forEach(ElevatorManager.managedDoors::remove);
+        managedDoors.clear();
+        managedSigns.clear();
 
         int minX = (int) cabin.getMinX();
         int minY = (int) cabin.getMinY();
@@ -525,7 +506,7 @@ public class ElevatorController {
             // manage nearby doors
             int shiftY = floor.y - (int) cabin.getMinY();
             BoundingBox expectedCabin = cabin.clone().shift(0, shiftY, 0);
-            setNearbyDoors(expectedCabin, shiftY == 0); // open for current floor
+            applyInteractions(expectedCabin, shiftY == 0); // open for current floor
         }
         // remove unused floor overrides
         floorNameOverrides.keySet().retainAll(floorYs);
@@ -593,7 +574,7 @@ public class ElevatorController {
     }
 
     public void tick() {
-        if (!controller.getChunk().isLoaded()) {
+        if (!world.isChunkLoaded(controller.getX() >> 4, controller.getZ() >> 4)) {
             LOGGER.warning("Elevator (%d,%d,%d) is in an unloaded chunk, pretty scary stuff!".formatted(controller.getX(), controller.getY(), controller.getZ()));
             ElevatorManager.removeElevator(this); // don't save
             return;
@@ -812,6 +793,114 @@ public class ElevatorController {
         }
 
         refreshRope();
+        updateSigns();
+    }
+
+    // Block Interactions
+
+    private void applyInteractions(BoundingBox cabin, boolean isArriving) {
+        applyInteractions(cabin, null, isArriving, Config.interactionsCabin);
+        applyInteractions(cabin.clone().expand(1, 1, 1), cabin, isArriving, Config.interactionsExterior);
+        updateSigns();
+    }
+
+    private void applyInteractions(BoundingBox box, @Nullable BoundingBox exclude, boolean isArriving, Set<BlockInteraction> interactions) {
+        Consumer<Block> consumer = block -> visitBlock(exclude, block, isArriving, interactions);
+        if (exclude == null) {
+            BlockUtils.forEachBlock(world, box, consumer);
+        } else {
+            BlockUtils.forEachBlockExcluding(world, box, exclude, consumer);
+        }
+    }
+
+    private void visitBlock(@Nullable BoundingBox exclude, Block block, boolean isArriving, Set<BlockInteraction> interactions) {
+        BlockData data = block.getBlockData();
+        BlockInteraction interaction = BlockInteraction.apply(interactions, block, data, isArriving);
+        if (interaction == BlockInteraction.LIGHTS || interaction == BlockInteraction.NOTE_BLOCKS) {
+            // look for attached signs
+            for (BlockFace cardinal : BlockUtils.CARDINALS) {
+                Block relative = block.getRelative(cardinal);
+                if (exclude != null && exclude.contains(relative.getX(), relative.getY(), relative.getZ()))
+                    continue;
+                if (!BlockUtils.isSignAttached(block, cardinal))
+                    continue;
+                managedSigns.add(relative);
+            }
+        }
+        if (interaction == BlockInteraction.SIGNS) {
+            managedSigns.add(block);
+        } else {
+            if (managedDoors.add(block)) {
+                ElevatorManager.managedDoors.put(block, this);
+            }
+        }
+    }
+
+    // signs are updated whenever the floor indices change, or every 5 ticks
+    private void updateSigns() {
+        if (!signStale && !(moving && world.getGameTime() % 3 == 0))
+            return;
+        Component currentFloor;
+        if (!moving) {
+            currentFloor = floors.get(currentFloorIdx).name;
+            signStale = false;
+        } else {
+            int y = (int) Math.round(cabin.getMinY());
+            // find the closest floor for display
+            currentFloor = Collections.min(floors, Comparator.comparingInt(floor -> Math.abs(floor.y - y))).name;
+            signStale = true;
+        }
+        managedSigns.removeIf(block -> {
+            BlockState state = block.getState();
+            if (!(state instanceof Sign sign))
+                return true;
+            int maxWidth = sign instanceof HangingSign ? TextUtils.HANGING_SIGN_MAX_WIDTH : TextUtils.SIGN_MAX_WIDTH;
+            List<Component> lines = new ArrayList<>(Arrays.asList(
+                    Component.empty(),
+                    currentFloor,
+                    Component.empty(),
+                    Component.empty()
+            ));
+            // replace one with an arrow if moving
+            if (moving) {
+                boolean up = velocity.getY() > 0;
+                Component arrow = Component.text((up ? "▲" : "▼"), up ? NamedTextColor.DARK_GREEN : NamedTextColor.RED);
+                int line = (int) (world.getGameTime() / 3 % 4);
+                if (up) line = 3 - line;
+                lines.set(line, TextUtils.toCentered(maxWidth, arrow, lines.get(line), arrow));
+            }
+            TextUtils.setLines(sign.getSide(Side.FRONT), lines);
+            TextUtils.setLines(sign.getSide(Side.BACK), lines);
+            sign.update();
+            return false;
+        });
+    }
+
+    private void setNearbyDoors(BoundingBox cabin, boolean open) {
+        // funky way to toggle doors
+        List<Block> oldDoors = List.copyOf(managedDoors);
+        Set<Block> visited = new HashSet<>();
+        BoundingBox doorBox = cabin.clone().expand(1, 1, 1);
+        BlockUtils.forEachBlock(world, doorBox, block -> {
+            BlockData data = block.getBlockData();
+            boolean shouldManage = BlockUtils.isDoorLike(data);
+            if (shouldManage) {
+                BlockUtils.setDoorLikeState(block, data, open);
+                visited.add(block);
+                if (managedDoors.add(block))
+                    ElevatorManager.managedDoors.put(block, this);
+            }
+        });
+        // remove stale managed doors that are no longer door blocks
+        for (Block oldDoor : oldDoors) {
+            if (visited.contains(oldDoor)) continue;
+            BlockData data = oldDoor.getBlockData();
+            // unmanage if no longer a door
+            if (!BlockUtils.isDoorLike(data)) {
+                ElevatorManager.managedDoors.remove(oldDoor);
+                managedDoors.remove(oldDoor);
+            }
+        }
     }
 
     void refreshRope() {
