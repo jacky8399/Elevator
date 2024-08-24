@@ -54,6 +54,7 @@ public class Config {
         var interactions = elevator.getConfigurationSection("interactions");
         interactionsCabin = BlockInteraction.fromYaml(interactions.getConfigurationSection("cabin"));
         interactionsExterior = BlockInteraction.fromYaml(interactions.getConfigurationSection("exterior"));
+        Elevator.LOGGER.info("cabin: " + interactionsCabin + ", exterior: " + interactionsExterior);
     }
 
     // Utilities

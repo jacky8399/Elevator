@@ -144,7 +144,7 @@ public class TransformationAnimation implements ElevatorAnimation {
                 }
                 ElevatorBlock.forEachDisplay(elevatorBlocks, display -> {
                     display.setInterpolationDuration(0);
-                    display.setTransformation(MathUtils.DEFAULT_TRANSFORMATION);
+                    display.setTransformation(MathUtils.withTranslation(display.getTransformation(), MathUtils.DEFAULT_TRANSLATION));
                 });
             }
         }
@@ -157,6 +157,10 @@ public class TransformationAnimation implements ElevatorAnimation {
                     display.setInterpolationDelay(0);
                     display.setInterpolationDuration(ticksPerInterval);
                     display.setTransformation(movingTransformation);
+                }, textDisplay -> {
+                    textDisplay.setInterpolationDelay(0);
+                    textDisplay.setInterpolationDuration(ticksPerInterval);
+                    textDisplay.setTransformation(MathUtils.withTranslation(textDisplay.getTransformation(), movingTransformation.getTranslation()));
                 });
             } else { // apply special transformation and duration for final interpolation frame
                 if (Config.debug) {
@@ -166,6 +170,10 @@ public class TransformationAnimation implements ElevatorAnimation {
                     display.setInterpolationDelay(0);
                     display.setInterpolationDuration(finalDuration);
                     display.setTransformation(finalTransformation);
+                }, textDisplay -> {
+                    textDisplay.setInterpolationDelay(0);
+                    textDisplay.setInterpolationDuration(ticksPerInterval);
+                    textDisplay.setTransformation(MathUtils.withTranslation(textDisplay.getTransformation(), finalTransformation.getTranslation()));
                 });
             }
             nextPoint++;

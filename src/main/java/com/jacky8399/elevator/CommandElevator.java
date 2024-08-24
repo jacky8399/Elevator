@@ -8,12 +8,14 @@ import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.block.Block;
+import org.bukkit.block.Sign;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.Player;
 import org.bukkit.util.StringUtil;
+import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -215,6 +217,15 @@ public class CommandElevator implements TabExecutor {
                     return true;
                 elevator.maxHeight = maxHeight;
                 player.sendMessage(ChatColor.GREEN + "Set elevator max height to " + maxHeight + " blocks");
+            }
+            case "sign" -> {
+                if (!checkPermission(player, "command.debug"))
+                    return true;
+                Block block = player.getTargetBlockExact(5);
+                if (block != null && block.getState() instanceof Sign sign) {
+                    var displays = ElevatorBlock.spawnSignText(sign, new Vector());
+                    BlockUtils.ensureCleanUp(displays, 10 * 20);
+                }
             }
             default -> player.sendMessage(ChatColor.RED + "Unknown command " + args[0]);
         }

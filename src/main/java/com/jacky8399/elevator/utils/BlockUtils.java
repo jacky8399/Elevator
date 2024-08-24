@@ -24,6 +24,7 @@ import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
 import org.bukkit.util.VoxelShape;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.joml.AxisAngle4d;
 import org.joml.Quaternionf;
@@ -36,7 +37,6 @@ import java.util.logging.Level;
 public class BlockUtils {
 
     public static final Quaternionf NO_ROTATION = new Quaternionf();
-    public static final Vector3f DEFAULT_SCALE = new Vector3f(1);
 
     public static final List<BlockFace> XZ_CARDINALS = List.of(BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH, BlockFace.WEST);
     public static final List<BlockFace> CARDINALS = List.of(BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH, BlockFace.WEST, BlockFace.UP, BlockFace.DOWN);
@@ -73,6 +73,79 @@ public class BlockUtils {
         };
     }
 
+    private static final double BLOCK_FACE_ANGLE_FACTOR = 2 * Math.PI / 16;
+    public static double getSignAngle(BlockFace blockFace) {
+        return switch (blockFace) {
+            case SOUTH -> 0;
+            case SOUTH_SOUTH_WEST -> 1 * BLOCK_FACE_ANGLE_FACTOR;
+            case SOUTH_WEST -> 2 * BLOCK_FACE_ANGLE_FACTOR;
+            case WEST_SOUTH_WEST -> 3 * BLOCK_FACE_ANGLE_FACTOR;
+            case WEST -> 4 * BLOCK_FACE_ANGLE_FACTOR;
+            case WEST_NORTH_WEST -> 5 * BLOCK_FACE_ANGLE_FACTOR;
+            case NORTH_WEST -> 6 * BLOCK_FACE_ANGLE_FACTOR;
+            case NORTH_NORTH_WEST -> 7 * BLOCK_FACE_ANGLE_FACTOR;
+            case NORTH -> 8 * BLOCK_FACE_ANGLE_FACTOR;
+            case NORTH_NORTH_EAST -> 9 * BLOCK_FACE_ANGLE_FACTOR;
+            case NORTH_EAST -> 10 * BLOCK_FACE_ANGLE_FACTOR;
+            case EAST_NORTH_EAST -> 11 * BLOCK_FACE_ANGLE_FACTOR;
+            case EAST -> 12 * BLOCK_FACE_ANGLE_FACTOR;
+            case EAST_SOUTH_EAST -> 13 * BLOCK_FACE_ANGLE_FACTOR;
+            case SOUTH_EAST -> 14 * BLOCK_FACE_ANGLE_FACTOR;
+            case SOUTH_SOUTH_EAST -> 15 * BLOCK_FACE_ANGLE_FACTOR;
+            default -> throw new IllegalArgumentException(blockFace + " is not horizontal");
+        };
+    }
+
+    // yeah ok sure whatever
+    // eyeballed measurements
+    // x and z are relative to the center of the block
+    private static final Vector SIGN_OFFSET = new Vector(0, 0.625, 1d / 16);
+    private static final Vector WALL_SIGN_OFFSET = new Vector(0, 4.5d / 16, -6d / 16);
+    private static final Vector WALL_SIGN_BACK_OFFSET = new Vector(0, 4.5d / 16, 0);
+    private static final Vector HANGING_SIGN_OFFSET = new Vector(0, 0.5d / 16, 1d / 16);
+    private static final Vector WALL_HANGING_SIGN_OFFSET = HANGING_SIGN_OFFSET;
+    private static final Vector BLOCK_CENTER = new Vector(0.5, 0, 0.5);
+    public static Location getSignLocation(Block block, BlockData data, Side side) {
+        boolean isBack = side == Side.BACK;
+        Location location = block.getLocation();
+        double angle;
+        Vector offset;
+        switch (data) {
+            case org.bukkit.block.data.type.Sign sign -> {
+                angle = getSignAngle(sign.getRotation());
+                if (isBack) angle -= Math.PI;
+                offset = SIGN_OFFSET.clone();
+                // note that rotateAroundY uses the right hand rule, so the angle needs to be negated
+                offset.rotateAroundY(-angle).add(BLOCK_CENTER);
+            }
+            case WallSign wallSign -> {
+                angle = getSignAngle(wallSign.getFacing());
+                if (!isBack)
+                    offset = WALL_SIGN_OFFSET.clone();
+                else
+                    offset = WALL_SIGN_BACK_OFFSET.clone();
+                offset.rotateAroundY(-angle).add(BLOCK_CENTER);
+                if (isBack) angle -= Math.PI;
+            }
+            case HangingSign hangingSign -> {
+                angle = getSignAngle(hangingSign.getRotation());
+                if (isBack) angle -= Math.PI;
+                offset = HANGING_SIGN_OFFSET.clone();
+                offset.rotateAroundY(-angle).add(BLOCK_CENTER);
+            }
+            case WallHangingSign wallHangingSign -> {
+                angle = getSignAngle(wallHangingSign.getFacing());
+                if (isBack) angle -= Math.PI;
+                offset = WALL_HANGING_SIGN_OFFSET.clone();
+                offset.rotateAroundY(-angle).add(BLOCK_CENTER);
+            }
+            case null, default -> throw new IllegalStateException("Block " + block + " is not a sign");
+        }
+        location.add(offset);
+        location.setYaw((float) Math.toDegrees(angle));
+        return location;
+    }
+
     public static boolean isDoorLike(BlockData blockData) {
         return blockData instanceof Door || blockData instanceof TrapDoor || blockData instanceof Gate;
     }
@@ -100,11 +173,7 @@ public class BlockUtils {
         return doorLikeSoundCache.computeIfAbsent(material, key -> {
             BlockData blockData = key.createBlockData();
             // evil sound key manipulation
-            // find the material type, which is usually consistent
-            // e.g. block.>copper<.break, block.>nether_wood<.break
-            String materialType = blockData.getSoundGroup().getBreakSound().getKey().getKey().split("\\.", 3)[1];
-            if (materialType.equals("metal"))
-                materialType = "iron"; // of course there are exceptions
+            String materialType = getMaterialType(blockData);
             String doorType = switch (blockData) {
                 case Door ignored -> "door";
                 case TrapDoor ignored -> "trapdoor";
@@ -127,6 +196,18 @@ public class BlockUtils {
             }
             return new Sound[] {openSound, closeSound};
         })[open ? 0 : 1];
+    }
+
+    private static @NotNull String getMaterialType(BlockData blockData) {
+        // find the material type, which is usually consistent
+        // e.g. block.>copper<.break, block.>nether_wood<.break
+        String materialType = blockData.getSoundGroup().getBreakSound().getKey().getKey().split("\\.", 3)[1];
+        // of course there are exceptions
+        if (materialType.equals("metal"))
+            materialType = "iron";
+        else if (materialType.equals("wood"))
+            materialType = "wooden";
+        return materialType;
     }
 
     public static float getLowestPoint(Block block) {
@@ -218,10 +299,6 @@ public class BlockUtils {
                 }
             }
         }
-    }
-
-    public static Transformation translateBy(Vector3f translation) {
-        return new Transformation(translation, NO_ROTATION, DEFAULT_SCALE, NO_ROTATION);
     }
 
     public static void ensureCleanUp(List<? extends Display> displays, int delay) {

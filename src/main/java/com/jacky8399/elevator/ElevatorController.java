@@ -4,6 +4,7 @@ import com.jacky8399.elevator.animation.ElevatorAnimation;
 import com.jacky8399.elevator.utils.*;
 import net.kyori.adventure.platform.bukkit.BukkitComponentSerializer;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.JoinConfiguration;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.ComponentSerializer;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
@@ -201,6 +202,7 @@ public class ElevatorController {
 
         // offset Y by 2 tick since interpolation also begins in 2 tick
         float yPadding = (float) (velocity.getY() / 20 * 2);
+        Vector padding = new Vector(0, yPadding, 0);
         Block baseBlock = world.getBlockAt((int) cabin.getMinX(), (int) Math.round(cabin.getMinY()), (int) cabin.getMinZ());
         for (int j = minY; j < maxY; j++) {
             for (int i = minX; i < maxX; i++) {
@@ -211,7 +213,7 @@ public class ElevatorController {
                             Tag.DRAGON_IMMUNE.isTagged(type) || Tag.WITHER_IMMUNE.isTagged(type))
                         continue;
 
-                    ElevatorBlock elevatorBlock = ElevatorBlock.spawnFor(world, baseBlock, block, block.getLocation().add(0, yPadding, 0));
+                    ElevatorBlock elevatorBlock = ElevatorBlock.spawnFor(world, baseBlock, block, padding);
                     movingBlocks.add(elevatorBlock);
 
                     if (type.isOccluding())
@@ -432,7 +434,7 @@ public class ElevatorController {
             if (!Config.elevatorScannerAllowScannerless) {
                 return FloorScan.NoScannerDisallowed.INSTANCE;
             }
-            currentFloorIdx = -1;
+            currentFloorIdx = 0;
             int topLevel = shaftTop - maxY + minY;
             // 1/F
             if (shaftBottom != minY)
@@ -529,7 +531,8 @@ public class ElevatorController {
         }
 
         if (this.currentFloorIdx != floors.size() - 1) {
-            ElevatorFloor upperFloor = floors.get(this.currentFloorIdx + 1);
+            this.currentFloorIdx++;
+            ElevatorFloor upperFloor = floors.get(this.currentFloorIdx);
             moveTo(upperFloor.y);
         }
     }
@@ -546,7 +549,8 @@ public class ElevatorController {
         }
 
         if (this.currentFloorIdx != 0) {
-            ElevatorFloor lowerFloor = floors.get(this.currentFloorIdx - 1);
+            this.currentFloorIdx--;
+            ElevatorFloor lowerFloor = floors.get(this.currentFloorIdx);
             moveTo(lowerFloor.y);
         }
     }
@@ -816,7 +820,8 @@ public class ElevatorController {
     private void visitBlock(@Nullable BoundingBox exclude, Block block, boolean isArriving, Set<BlockInteraction> interactions) {
         BlockData data = block.getBlockData();
         BlockInteraction interaction = BlockInteraction.apply(interactions, block, data, isArriving);
-        if (interaction == BlockInteraction.LIGHTS || interaction == BlockInteraction.NOTE_BLOCKS) {
+        boolean checkSigns = interactions.contains(BlockInteraction.SIGNS);
+        if (checkSigns && (interaction == BlockInteraction.LIGHTS || interaction == BlockInteraction.NOTE_BLOCKS)) {
             // look for attached signs
             for (BlockFace cardinal : BlockUtils.CARDINALS) {
                 Block relative = block.getRelative(cardinal);
@@ -827,7 +832,7 @@ public class ElevatorController {
                 managedSigns.add(relative);
             }
         }
-        if (interaction == BlockInteraction.SIGNS) {
+        if (checkSigns && interaction == BlockInteraction.SIGNS) {
             managedSigns.add(block);
         } else {
             if (managedDoors.add(block)) {
@@ -841,6 +846,8 @@ public class ElevatorController {
         if (!signStale && !(moving && world.getGameTime() % 3 == 0))
             return;
         Component currentFloor;
+        if (floors.isEmpty())
+            return;
         if (!moving) {
             currentFloor = floors.get(currentFloorIdx).name;
             signStale = false;
@@ -850,55 +857,40 @@ public class ElevatorController {
             currentFloor = Collections.min(floors, Comparator.comparingInt(floor -> Math.abs(floor.y - y))).name;
             signStale = true;
         }
+        List<Component> signLines = Arrays.asList(Component.empty(), currentFloor, Component.empty(), Component.empty());
+        List<Component> hangingSignLines = Arrays.asList(Component.empty(), currentFloor, Component.empty(), Component.empty());
+        // replace one with an arrow if moving
+        if (moving) {
+            boolean up = velocity.getY() > 0;
+            Component arrow = Component.text((up ? "▲" : "▼"), up ? NamedTextColor.DARK_GREEN : NamedTextColor.RED);
+            int line = (int) (world.getGameTime() / 3 % 4);
+            if (up) line = 3 - line;
+            signLines.set(line, TextUtils.toCentered(TextUtils.SIGN_MAX_WIDTH, arrow, signLines.get(line), arrow));
+            hangingSignLines.set(line, TextUtils.toCentered(TextUtils.HANGING_SIGN_MAX_WIDTH, arrow, signLines.get(line), arrow));
+        }
+
         managedSigns.removeIf(block -> {
             BlockState state = block.getState();
             if (!(state instanceof Sign sign))
                 return true;
-            int maxWidth = sign instanceof HangingSign ? TextUtils.HANGING_SIGN_MAX_WIDTH : TextUtils.SIGN_MAX_WIDTH;
-            List<Component> lines = new ArrayList<>(Arrays.asList(
-                    Component.empty(),
-                    currentFloor,
-                    Component.empty(),
-                    Component.empty()
-            ));
-            // replace one with an arrow if moving
-            if (moving) {
-                boolean up = velocity.getY() > 0;
-                Component arrow = Component.text((up ? "▲" : "▼"), up ? NamedTextColor.DARK_GREEN : NamedTextColor.RED);
-                int line = (int) (world.getGameTime() / 3 % 4);
-                if (up) line = 3 - line;
-                lines.set(line, TextUtils.toCentered(maxWidth, arrow, lines.get(line), arrow));
-            }
+            var lines = state instanceof HangingSign ? hangingSignLines : signLines;
             TextUtils.setLines(sign.getSide(Side.FRONT), lines);
             TextUtils.setLines(sign.getSide(Side.BACK), lines);
             sign.update();
             return false;
         });
-    }
 
-    private void setNearbyDoors(BoundingBox cabin, boolean open) {
-        // funky way to toggle doors
-        List<Block> oldDoors = List.copyOf(managedDoors);
-        Set<Block> visited = new HashSet<>();
-        BoundingBox doorBox = cabin.clone().expand(1, 1, 1);
-        BlockUtils.forEachBlock(world, doorBox, block -> {
-            BlockData data = block.getBlockData();
-            boolean shouldManage = BlockUtils.isDoorLike(data);
-            if (shouldManage) {
-                BlockUtils.setDoorLikeState(block, data, open);
-                visited.add(block);
-                if (managedDoors.add(block))
-                    ElevatorManager.managedDoors.put(block, this);
-            }
-        });
-        // remove stale managed doors that are no longer door blocks
-        for (Block oldDoor : oldDoors) {
-            if (visited.contains(oldDoor)) continue;
-            BlockData data = oldDoor.getBlockData();
-            // unmanage if no longer a door
-            if (!BlockUtils.isDoorLike(data)) {
-                ElevatorManager.managedDoors.remove(oldDoor);
-                managedDoors.remove(oldDoor);
+        // turns out changing the text negatively affects the interpolation of other properties
+        // thank you Mojang, very cool
+        if (false && movingBlocks != null) {
+            for (ElevatorBlock movingBlock : movingBlocks) {
+                if (movingBlock.textDisplays() != null && movingBlock.flags().contains(ElevatorBlock.Flag.UPDATE_TEXT)) {
+                    var lines = movingBlock.blockState() instanceof HangingSign ? hangingSignLines : signLines;
+                    String legacy = BukkitComponentSerializer.legacy().serialize(Component.join(JoinConfiguration.newlines(), lines));
+                    for (TextDisplay textDisplay : movingBlock.textDisplays()) {
+                        textDisplay.setText(legacy);
+                    }
+                }
             }
         }
     }
