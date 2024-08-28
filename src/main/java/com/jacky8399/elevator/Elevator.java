@@ -2,6 +2,7 @@ package com.jacky8399.elevator;
 
 import com.jacky8399.elevator.animation.ElevatorAnimation;
 import com.jacky8399.elevator.animation.TransformationAnimation;
+import com.jacky8399.elevator.utils.BitmapGlyphInfo;
 import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
@@ -52,6 +53,12 @@ public final class Elevator extends JavaPlugin {
                 Events.loadChunkElevators(chunk);
             }
         }
+
+        // force load BitmapGlyphInfo
+        long start = System.nanoTime();
+        BitmapGlyphInfo.getBitmapGlyphInfo('a');
+        long elapsed = System.nanoTime() - start;
+        LOGGER.info("Loading character info took " + elapsed / 1000000 + "ms");
     }
 
     @Override

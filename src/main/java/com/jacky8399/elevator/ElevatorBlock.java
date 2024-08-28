@@ -19,10 +19,7 @@ import org.bukkit.block.Sign;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.sign.Side;
 import org.bukkit.block.sign.SignSide;
-import org.bukkit.entity.BlockDisplay;
-import org.bukkit.entity.Display;
-import org.bukkit.entity.Shulker;
-import org.bukkit.entity.TextDisplay;
+import org.bukkit.entity.*;
 import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -32,18 +29,22 @@ import java.util.*;
 import java.util.function.Consumer;
 
 public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, BlockState blockState,
-                            @Nullable List<TextDisplay> textDisplays, @Nullable Shulker collision,
+                            @Nullable List<TextDisplay> textDisplays,
+                            @Nullable ArmorStand collisionBase, @Nullable Shulker collision,
                             @NotNull Set<Flag> flags) {
+    public static Set<Entity> excludedEntities = new HashSet<>();
+    public static final boolean USE_COLLISION_THAT_DOESNT_WORK = false;
 
     public static ElevatorBlock spawnFor(World world, Block base, Block block, Vector offset) {
-        Location location = block.getLocation();
+        Location location = block.getLocation().add(offset);
 
         BlockData data = block.getBlockData();
         BlockState state = block.getState();
 
-        BlockDisplay display = world.spawn(location.add(offset), BlockDisplay.class, e -> {
+        BlockDisplay display = world.spawn(location, BlockDisplay.class, e -> {
             e.setBlock(data);
             e.setTeleportDuration(0);
+            e.setPersistent(false);
         });
         Set<Flag> flags = Set.of();
         List<TextDisplay> textDisplays = null;
@@ -55,18 +56,45 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, BlockS
             }
         }
 
+        ArmorStand collisionBase;
+        Shulker collision;
+        if (USE_COLLISION_THAT_DOESNT_WORK && block.getY() != base.getY() && block.getType().isOccluding()) {
+            Location centered = location.clone().add(0.5, 0, 0.5);
+            collisionBase = world.spawn(centered, ArmorStand.class, e -> {
+//                e.setInvisible(true);
+                e.setInvulnerable(true);
+                e.setMarker(true);
+                e.setPersistent(false);
+            });
+
+            collision = world.spawn(centered, Shulker.class, e -> {
+                e.setAI(false);
+//                e.setInvisible(true);
+                e.setInvulnerable(true);
+                e.setPersistent(false);
+
+                collisionBase.addPassenger(e);
+            });
+            excludedEntities.add(collisionBase);
+            excludedEntities.add(collision);
+        } else {
+            collisionBase = null;
+            collision = null;
+        }
+
         BlockPos pos = new BlockPos(block.getX() - base.getX(), block.getY() - base.getY(), block.getZ() - base.getZ());
-        return new ElevatorBlock(pos, display, state, textDisplays, null, flags);
+        return new ElevatorBlock(pos, display, state, textDisplays, collisionBase, collision, flags);
     }
 
     public static ElevatorBlock spawnVirtualFor(World world, Block base, Block block, BlockData blockData, Location displayEntityLocation) {
         BlockDisplay display = world.spawn(displayEntityLocation, BlockDisplay.class, e -> {
             e.setBlock(blockData);
             e.setTeleportDuration(0);
+            e.setPersistent(false);
         });
 
         return new ElevatorBlock(new BlockPos(block.getX() - base.getX(), block.getY() - base.getY(), block.getZ() - base.getZ()),
-                display, null, null, null, Set.of());
+                display, null, null, null, null, Set.of());
     }
 
     static List<TextDisplay> spawnSignText(Sign sign, Vector offset) {
@@ -122,6 +150,14 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, BlockS
             for (TextDisplay textDisplay : textDisplays) {
                 textDisplay.remove();
             }
+        }
+        if (collision != null) {
+            collision.remove();
+            excludedEntities.remove(collision);
+        }
+        if (collisionBase != null) {
+            collisionBase.remove();
+            excludedEntities.remove(collisionBase);
         }
 //        stand.remove();
     }

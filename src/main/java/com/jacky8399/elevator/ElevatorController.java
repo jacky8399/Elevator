@@ -134,7 +134,7 @@ public class ElevatorController {
             if (e instanceof Player player && player.getGameMode() == GameMode.SPECTATOR)
                 return false;
             // these entities might be safe to teleport
-            return e instanceof LivingEntity || e instanceof Hanging || e instanceof Vehicle || e instanceof Item;
+            return !ElevatorBlock.excludedEntities.contains(e) && e instanceof LivingEntity || e instanceof Hanging || e instanceof Vehicle || e instanceof Item;
         });
     }
 
@@ -168,7 +168,8 @@ public class ElevatorController {
 
             var blockDestroyer = virtualizeCabin(maxX, minX, maxZ, minZ, maxY, minY);
 
-            animation = Elevator.SCHEDULER.mobilize(this, movingBlocks, movementTime, speed, velocity);
+            // I love mutability
+            animation = Elevator.SCHEDULER.mobilize(this, List.copyOf(movingBlocks), movementTime, speed, velocity.clone());
 
             // scan cabin entities
             var entities = scanCabinEntities();
@@ -866,7 +867,7 @@ public class ElevatorController {
             int line = (int) (world.getGameTime() / 3 % 4);
             if (up) line = 3 - line;
             signLines.set(line, TextUtils.toCentered(TextUtils.SIGN_MAX_WIDTH, arrow, signLines.get(line), arrow));
-            hangingSignLines.set(line, TextUtils.toCentered(TextUtils.HANGING_SIGN_MAX_WIDTH, arrow, signLines.get(line), arrow));
+            hangingSignLines.set(line, TextUtils.toCentered(TextUtils.HANGING_SIGN_MAX_WIDTH, arrow, hangingSignLines.get(line), arrow));
         }
 
         managedSigns.removeIf(block -> {

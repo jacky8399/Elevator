@@ -1,19 +1,17 @@
 package com.jacky8399.elevator.animation;
 
 import com.jacky8399.elevator.Config;
-import com.jacky8399.elevator.Elevator;
 import com.jacky8399.elevator.ElevatorBlock;
 import com.jacky8399.elevator.ElevatorController;
 import com.jacky8399.elevator.utils.MathUtils;
-import org.bukkit.Bukkit;
+import com.jacky8399.elevator.utils.PaperUtils;
 import org.bukkit.Location;
-import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.entity.ArmorStand;
 import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /*
@@ -27,13 +25,12 @@ public class TransformationAnimation implements ElevatorAnimation {
     How far must display entities travel before being teleported server-side
     A higher value might reduce the number of packets sent, but is likely to cause issues with the entity tracker
      */
-    public static final int TRANSFORMATION_INTERVAL = 30;
+    public static final int TRANSFORMATION_INTERVAL = 32;
     /*
     Whether to recalculate the transformation and duration on the final stretch
     This will result in a sudden jump due to how transformations work, but might appear smoother
      */
     public static final boolean RECALCULATE_FINAL_STRETCH = false;
-    public static final boolean USE_TASKS = false;
 
     // animation properties
     private final int ticksPerInterval;
@@ -45,6 +42,7 @@ public class TransformationAnimation implements ElevatorAnimation {
     // transformation and duration for the final interpolation frame
     private final Transformation finalTransformation;
     private final int finalDuration;
+    private final Vector velocity;
 
     // animation state
     private int nextPoint = 0;
@@ -56,10 +54,10 @@ public class TransformationAnimation implements ElevatorAnimation {
         // teleport display entities every 30 blocks travelled
         // to ensure that the display entities don't go out of tracking range
         int yDiff = movementTime * speed / 20;
+        this.velocity = velocity.clone();
         boolean down = velocity.getBlockY() < 0;
         teleportDistance = (down ? -TRANSFORMATION_INTERVAL : TRANSFORMATION_INTERVAL);
         ticksPerInterval = 20 * TRANSFORMATION_INTERVAL / speed;
-        var scheduler = Bukkit.getScheduler();
         movingTransformation = new Transformation(new Vector3f(0, down ? -TRANSFORMATION_INTERVAL : TRANSFORMATION_INTERVAL, 0),
                 new Quaternionf(), new Vector3f(1), new Quaternionf());
         points = yDiff / TRANSFORMATION_INTERVAL;
@@ -76,46 +74,6 @@ public class TransformationAnimation implements ElevatorAnimation {
         if (Config.debug) {
             controller.debug("[Animation] No of points: %d".formatted(points));
         }
-
-        if (!USE_TASKS)
-            return;
-        var tasks = new ArrayList<BukkitTask>();
-        for (int i = 0; i <= points; i++) {
-            long delay = ticksPerInterval * (long) i; // WHY IS DELAY A LONG????
-            if (i != 0) {
-                boolean resetTransformation = RECALCULATE_FINAL_STRETCH && i == points;
-                // teleport first
-                tasks.add(scheduler.runTaskLater(Elevator.INSTANCE, () -> {
-                    Location location = new Location(null, 0, 0, 0);
-                    ElevatorBlock.forEachDisplay(elevatorBlocks, display -> {
-                                display.teleport(display.getLocation(location).add(0, down ? -TRANSFORMATION_INTERVAL : TRANSFORMATION_INTERVAL, 0));
-                                if (resetTransformation) {
-                                    display.setInterpolationDuration(0);
-                                    display.setTransformation(MathUtils.DEFAULT_TRANSFORMATION);
-                                }
-                            }
-                    );
-                }, delay + (resetTransformation ? 0 : 2)));
-            }
-            if (!RECALCULATE_FINAL_STRETCH || i != points) {
-                tasks.add(scheduler.runTaskLater(Elevator.INSTANCE, () -> {
-                    ElevatorBlock.forEachDisplay(elevatorBlocks, display -> {
-                        display.setInterpolationDelay(0);
-                        display.setInterpolationDuration(ticksPerInterval);
-                        display.setTransformation(movingTransformation);
-                    });
-                }, delay + 2));
-            } else {
-                tasks.add(scheduler.runTaskLater(Elevator.INSTANCE, () -> {
-                    ElevatorBlock.forEachDisplay(elevatorBlocks, display -> {
-                        display.setInterpolationDelay(0);
-                        display.setInterpolationDuration(finalDuration);
-                        display.setTransformation(finalTransformation);
-                    });
-                }, delay + 2));
-            }
-        }
-
     }
 
     @Override
@@ -125,8 +83,16 @@ public class TransformationAnimation implements ElevatorAnimation {
 
     @Override
     public void tick(ElevatorController controller) {
-        if (USE_TASKS)
-            return;
+        if (ElevatorBlock.USE_COLLISION_THAT_DOESNT_WORK) {
+            for (ElevatorBlock block : elevatorBlocks) {
+                ArmorStand collisionBase = block.collisionBase();
+                if (collisionBase != null) {
+                    Location location = collisionBase.getLocation(tempLocation);
+                    // thank you mutable Vectors, very cool
+                    PaperUtils.teleport(collisionBase, location.add(0, velocity.getY() / 20, 0));
+                }
+            }
+        }
         int expectedTick = nextPoint * ticksPerInterval;
         boolean isResetTransformation = RECALCULATE_FINAL_STRETCH && nextPoint == points;
         if (elapsed == expectedTick + (isResetTransformation ? 0 : 2) && nextPoint != 0) {
