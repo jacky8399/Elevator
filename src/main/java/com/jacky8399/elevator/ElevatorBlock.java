@@ -33,9 +33,9 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, BlockS
                             @Nullable ArmorStand collisionBase, @Nullable Shulker collision,
                             @NotNull Set<Flag> flags) {
     public static Set<Entity> excludedEntities = new HashSet<>();
-    public static final boolean USE_COLLISION_THAT_DOESNT_WORK = false;
+    public static final boolean USE_COLLISION_THAT_DOESNT_WORK = true;
 
-    public static ElevatorBlock spawnFor(World world, Block base, Block block, Vector offset) {
+    public static ElevatorBlock spawnFor(World world, Block base, Set<Integer> noCollisionYs, Block block, Vector offset) {
         Location location = block.getLocation().add(offset);
 
         BlockData data = block.getBlockData();
@@ -58,10 +58,10 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, BlockS
 
         ArmorStand collisionBase;
         Shulker collision;
-        if (USE_COLLISION_THAT_DOESNT_WORK && block.getY() != base.getY() && block.getType().isOccluding()) {
+        if (USE_COLLISION_THAT_DOESNT_WORK && !noCollisionYs.contains(block.getY()) && block.getType().isOccluding()) {
             Location centered = location.clone().add(0.5, 0, 0.5);
             collisionBase = world.spawn(centered, ArmorStand.class, e -> {
-//                e.setInvisible(true);
+                e.setInvisible(true);
                 e.setInvulnerable(true);
                 e.setMarker(true);
                 e.setPersistent(false);
@@ -69,7 +69,7 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, BlockS
 
             collision = world.spawn(centered, Shulker.class, e -> {
                 e.setAI(false);
-//                e.setInvisible(true);
+                e.setInvisible(true);
                 e.setInvulnerable(true);
                 e.setPersistent(false);
 

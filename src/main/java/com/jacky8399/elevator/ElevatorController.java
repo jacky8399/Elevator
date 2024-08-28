@@ -1,6 +1,7 @@
 package com.jacky8399.elevator;
 
 import com.jacky8399.elevator.animation.ElevatorAnimation;
+import com.jacky8399.elevator.animation.TransformationAnimation;
 import com.jacky8399.elevator.utils.*;
 import net.kyori.adventure.platform.bukkit.BukkitComponentSerializer;
 import net.kyori.adventure.text.Component;
@@ -198,13 +199,14 @@ public class ElevatorController {
 
         int noOfBlocks = length * width * height + 2 * length * width + 1 /* rope */;
         movingBlocks = new ArrayList<>(noOfBlocks);
-        var toBreak = new ArrayList<Block>();
-        var toBreakNonSolid = new ArrayList<Block>();
+        var toBreak = new ArrayList<Block>(noOfBlocks);
+        var toBreakNonSolid = new ArrayList<Block>(noOfBlocks);
 
         // offset Y by 2 tick since interpolation also begins in 2 tick
-        float yPadding = (float) (velocity.getY() / 20 * 2);
+        float yPadding = (float) (velocity.getY() / 20 * TransformationAnimation.TRANSFORMATION_PADDING_TICKS);
         Vector padding = new Vector(0, yPadding, 0);
         Block baseBlock = world.getBlockAt((int) cabin.getMinX(), (int) Math.round(cabin.getMinY()), (int) cabin.getMinZ());
+        Set<Integer> noCollisionYs = Set.of(minY, maxY - 1); // don't spawn shulkers at the top and bottom of cabins to avoid faulty collision
         for (int j = minY; j < maxY; j++) {
             for (int i = minX; i < maxX; i++) {
                 for (int k = minZ; k < maxZ; k++) {
@@ -214,7 +216,7 @@ public class ElevatorController {
                             Tag.DRAGON_IMMUNE.isTagged(type) || Tag.WITHER_IMMUNE.isTagged(type))
                         continue;
 
-                    ElevatorBlock elevatorBlock = ElevatorBlock.spawnFor(world, baseBlock, block, padding);
+                    ElevatorBlock elevatorBlock = ElevatorBlock.spawnFor(world, baseBlock, noCollisionYs, block, padding);
                     movingBlocks.add(elevatorBlock);
 
                     if (type.isOccluding())
@@ -338,7 +340,6 @@ public class ElevatorController {
                 // turns out you can't make paintings fixed. too bad!
                 itemFrame.setFixed(true);
             }
-
         }
         animation.onEnterCabin(this, entity);
 
@@ -367,6 +368,7 @@ public class ElevatorController {
     }
 
     public FloorScan scanFloors() {
+        long startTime = System.nanoTime();
         removeRope();
         // clear previous floors from the global cache
         for (ElevatorFloor floor : floors) {
@@ -514,6 +516,9 @@ public class ElevatorController {
         // remove unused floor overrides
         floorNameOverrides.keySet().retainAll(floorYs);
         refreshRope();
+        if (Config.debug) {
+            debug("Floor scanning took " + (System.nanoTime() - startTime) / 1000000 + "ms");
+        }
         return scanners.isEmpty() ?
                 new FloorScan.NoScanner(scanBox, List.copyOf(floors), currentFloorIdx) :
                 new FloorScan.Scanner(scanBox, List.copyOf(floors), currentFloorIdx);
@@ -758,7 +763,8 @@ public class ElevatorController {
             }
 
             Vector velocity = entity.getVelocity();
-            boolean mustTeleport = !(entity instanceof Player);
+            // correct location if player tries to fly
+            boolean mustTeleport = !(entity instanceof Player player) || player.isFlying() || player.isGliding();
 
             double y = temp.getY();
             double expectedY = cabinMinY + offset;
@@ -784,6 +790,7 @@ public class ElevatorController {
             if (entity instanceof Player player) {
                 PlayerUtils.setAllowFlight(player);
                 player.setFlying(false);
+                player.setGliding(false);
             }
             velocity.setY(entityYVel);
             entity.setVelocity(velocity);

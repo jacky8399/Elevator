@@ -31,6 +31,8 @@ public class TransformationAnimation implements ElevatorAnimation {
     This will result in a sudden jump due to how transformations work, but might appear smoother
      */
     public static final boolean RECALCULATE_FINAL_STRETCH = false;
+    public static final int TRANSFORMATION_PADDING_TICKS = 2;
+    public static final int COLLISION_UPDATE_INTERVAL = 2;
 
     // animation properties
     private final int ticksPerInterval;
@@ -83,19 +85,19 @@ public class TransformationAnimation implements ElevatorAnimation {
 
     @Override
     public void tick(ElevatorController controller) {
-        if (ElevatorBlock.USE_COLLISION_THAT_DOESNT_WORK) {
+        if (ElevatorBlock.USE_COLLISION_THAT_DOESNT_WORK && elapsed % COLLISION_UPDATE_INTERVAL == 0) {
             for (ElevatorBlock block : elevatorBlocks) {
                 ArmorStand collisionBase = block.collisionBase();
                 if (collisionBase != null) {
                     Location location = collisionBase.getLocation(tempLocation);
                     // thank you mutable Vectors, very cool
-                    PaperUtils.teleport(collisionBase, location.add(0, velocity.getY() / 20, 0));
+                    PaperUtils.teleport(collisionBase, location.add(0, velocity.getY() * COLLISION_UPDATE_INTERVAL / 20, 0));
                 }
             }
         }
         int expectedTick = nextPoint * ticksPerInterval;
         boolean isResetTransformation = RECALCULATE_FINAL_STRETCH && nextPoint == points;
-        if (elapsed == expectedTick + (isResetTransformation ? 0 : 2) && nextPoint != 0) {
+        if (elapsed == expectedTick + (isResetTransformation ? 0 : TRANSFORMATION_PADDING_TICKS) && nextPoint != 0) {
             if (Config.debug) {
                 controller.debug("[Animation] At tick %d: teleporting entities for point %d".formatted(elapsed, nextPoint));
             }
@@ -114,7 +116,7 @@ public class TransformationAnimation implements ElevatorAnimation {
                 });
             }
         }
-        if (elapsed == expectedTick + 2) { // 2 tick delay to ensure proper interpolation
+        if (elapsed == expectedTick + TRANSFORMATION_PADDING_TICKS) { // 2 tick delay to ensure proper interpolation
             if (!RECALCULATE_FINAL_STRETCH || nextPoint != points) {
                 if (Config.debug) {
                     controller.debug("[Animation] At tick %d: updating transformations for point %d".formatted(elapsed, nextPoint));
