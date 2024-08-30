@@ -412,7 +412,7 @@ public class ElevatorController {
         int shaftBottom = controller.getY() - maxHeight - (maxY - minY); // also account for the height of the cabin
         for (int i = minX; i < maxX; i++) {
             for (int k = minZ; k < maxZ; k++) {
-                if (!BlockUtils.unloadCatcher(world, i, k))
+                if (BlockUtils.unloadCatcher(world, i, k))
                     continue;
 
                 int currentBottom = BlockUtils.rayTraceVertical(world, i, minY - 1, k, false, shaftBottom);
@@ -469,7 +469,7 @@ public class ElevatorController {
                 }
                 for (BlockFace face : scanner.faces) {
                     Location location = scanner.block.getLocation().add(face.getModX(), 0, face.getModZ());
-                    if (!BlockUtils.unloadCatcher(world, location.getBlockX(), location.getBlockZ()))
+                    if (BlockUtils.unloadCatcher(world, location.getBlockX(), location.getBlockZ()))
                         continue;
                     for (int i = start; i <= end; i++) {
                         location.setY(i);
@@ -976,8 +976,10 @@ public class ElevatorController {
             }
             controller.controller = block;
             controller.world = block.getWorld();
-            controller.scanFloors();
-            controller.refreshRope();
+            Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
+                controller.scanFloors();
+                controller.refreshRope();
+            }, 1);
             return controller;
         } catch (Exception ex) {
             LOGGER.log(Level.SEVERE, "Failed to load ElevatorController at (%d, %d, %d)".formatted(block.getX(), block.getY(), block.getZ()), ex);

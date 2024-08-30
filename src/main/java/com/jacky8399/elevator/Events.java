@@ -156,10 +156,20 @@ public class Events implements Listener {
 
     static void loadChunkElevators(Chunk chunk) {
         int loaded = 0;
+        long gameTime = chunk.getWorld().getGameTime();
         for (BlockState state : chunk.getTileEntities()) {
             Block block = state.getBlock();
             if (ElevatorManager.elevators.containsKey(block)) {
                 Elevator.LOGGER.warning("An elevator already exists at %d, %d, %d! Skipping...".formatted(block.getX(), block.getY(), block.getZ()));
+                continue;
+            }
+            if (ElevatorManager.recentlyUnloadedElevators.get(block) instanceof Long unloadedAt) {
+                if (gameTime - unloadedAt < 5) {
+                    Elevator.LOGGER.warning("Elevator at %d, %d, %d was unloaded %d ticks ago! Skipping...".formatted(
+                            block.getX(), block.getY(), block.getZ(), gameTime - unloadedAt
+                    ));
+                    continue;
+                }
             }
             ElevatorController controller = ElevatorController.load(block, (TileState) state);
             if (controller != null) {
@@ -186,6 +196,7 @@ public class Events implements Listener {
                 controller.cleanUp();
                 controller.save();
                 ElevatorManager.removeElevator(controller);
+                ElevatorManager.setUnloadedAt(block, block.getWorld().getGameTime());
             }
         }
     }

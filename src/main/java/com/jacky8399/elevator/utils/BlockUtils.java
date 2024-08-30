@@ -252,11 +252,11 @@ public class BlockUtils {
     public static boolean unloadCatcher(World world, int blockX, int blockZ) {
         if (!world.isChunkLoaded(blockX >> 4, blockZ >> 4)) {
             if (Config.debug) {
-                Elevator.LOGGER.log(Level.WARNING, "Unloaded block accessed at " + blockX + "," + blockZ, new RuntimeException("Stack trace"));
+                Elevator.LOGGER.log(Level.WARNING, "Unloaded block accessed at " + blockX + "," + blockZ);
             }
-            return false;
+            return true;
         }
-        return true;
+        return false;
     }
 
     public static void forEachBlock(World world, BoundingBox box, Consumer<Block> consumer) {
@@ -270,7 +270,7 @@ public class BlockUtils {
         for (int j = minY; j < maxY; j++) {
             for (int i = minX; i < maxX; i++) {
                 for (int k = minZ; k < maxZ; k++) {
-                    if (!unloadCatcher(world, i, k))
+                    if (unloadCatcher(world, i, k))
                         continue;
                     Block block = world.getBlockAt(i, j, k);
                     consumer.accept(block);
@@ -292,7 +292,7 @@ public class BlockUtils {
                 for (int k = minZ; k < maxZ; k++) {
                     if (excludeBox.contains(i, j, k))
                         continue;
-                    if (!unloadCatcher(world, i, k))
+                    if (unloadCatcher(world, i, k))
                         continue;
                     Block block = world.getBlockAt(i, j, k);
                     consumer.accept(block);

@@ -11,6 +11,7 @@ import java.util.WeakHashMap;
 
 public class ElevatorManager {
     public static final Map<Block, ElevatorController> elevators = new LinkedHashMap<>();
+    public static final Map<Block, Long> recentlyUnloadedElevators = new HashMap<>();
 
     public static void cleanUp() {
         elevators.clear();
@@ -35,6 +36,7 @@ public class ElevatorManager {
     public static void removeElevator(ElevatorController controller) {
         elevators.remove(controller.controller);
         playerElevatorCache.values().removeIf(c -> c.controller == controller);
+        playerEditingElevator.values().remove(controller);
         for (Block managedDoor : controller.managedDoors) {
             managedDoors.remove(managedDoor);
         }
@@ -44,5 +46,9 @@ public class ElevatorManager {
                 managedFloors.remove(sourceBlock);
             }
         }
+    }
+
+    public static void setUnloadedAt(Block block, long tick) {
+        recentlyUnloadedElevators.put(block, tick);
     }
 }
