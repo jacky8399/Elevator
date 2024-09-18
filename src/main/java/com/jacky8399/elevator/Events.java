@@ -4,10 +4,7 @@ import com.jacky8399.elevator.utils.ItemUtils;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
-import org.bukkit.Chunk;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.World;
+import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
@@ -39,6 +36,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
 
 import static com.jacky8399.elevator.Elevator.ADVNTR;
 import static com.jacky8399.elevator.Messages.*;
@@ -151,7 +149,11 @@ public class Events implements Listener {
 
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent e) {
-        loadChunkElevators(e.getChunk());
+        Chunk chunk = e.getChunk();
+        Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
+            if (chunk.isLoaded())
+                loadChunkElevators(chunk);
+        }, 5);
     }
 
     static void loadChunkElevators(Chunk chunk) {
@@ -160,11 +162,13 @@ public class Events implements Listener {
         for (BlockState state : chunk.getTileEntities()) {
             Block block = state.getBlock();
             if (ElevatorManager.elevators.containsKey(block)) {
-                Elevator.LOGGER.warning("An elevator already exists at %d, %d, %d! Skipping...".formatted(block.getX(), block.getY(), block.getZ()));
+                Elevator.LOGGER.log(Level.WARNING,
+                        "An elevator already exists at %d, %d, %d! Skipping...".formatted(block.getX(), block.getY(), block.getZ()),
+                        Config.debug ? new RuntimeException() : null);
                 continue;
             }
             if (ElevatorManager.recentlyUnloadedElevators.get(block) instanceof Long unloadedAt) {
-                if (gameTime - unloadedAt < 5) {
+                if (gameTime - unloadedAt < 2) {
                     Elevator.LOGGER.warning("Elevator at %d, %d, %d was unloaded %d ticks ago! Skipping...".formatted(
                             block.getX(), block.getY(), block.getZ(), gameTime - unloadedAt
                     ));
@@ -185,10 +189,13 @@ public class Events implements Listener {
     @EventHandler
     public void onChunkUnload(ChunkUnloadEvent e) {
         Chunk chunk = e.getChunk();
+        boolean ticket = chunk.addPluginChunkTicket(Elevator.INSTANCE);
         if (!chunk.isLoaded()) {
             Elevator.LOGGER.info("Chunk isn't loaded!!");
+            chunk.addPluginChunkTicket(Elevator.INSTANCE);
             return;
         }
+        int unloaded = 0;
         for (BlockState state : chunk.getTileEntities()) {
             Block block = state.getBlock();
             ElevatorController controller = ElevatorManager.elevators.remove(block);
@@ -197,7 +204,13 @@ public class Events implements Listener {
                 controller.save();
                 ElevatorManager.removeElevator(controller);
                 ElevatorManager.setUnloadedAt(block, block.getWorld().getGameTime());
+                unloaded++;
             }
+        }
+        if (ticket)
+            chunk.removePluginChunkTicket(Elevator.INSTANCE);
+        if (Config.debug && unloaded != 0) {
+            Elevator.LOGGER.info("Unloaded %d elevators for chunk %d, %d".formatted(unloaded, chunk.getX(), chunk.getZ()));
         }
     }
 

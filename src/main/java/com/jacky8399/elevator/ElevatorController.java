@@ -502,9 +502,9 @@ public class ElevatorController {
             }
             currentFloorIdx = closestFloor;
         }
-        var floorYs = new HashSet<Integer>();
+//        var floorYs = new HashSet<Integer>();
         for (ElevatorFloor floor : floors) {
-            floorYs.add(floor.y);
+//            floorYs.add(floor.y);
             // add new floor sources to the global cache
             if (floor.source != null)
                 ElevatorManager.managedFloors.put(floor.source, this);
@@ -513,8 +513,8 @@ public class ElevatorController {
             BoundingBox expectedCabin = cabin.clone().shift(0, shiftY, 0);
             applyInteractions(expectedCabin, shiftY == 0); // open for current floor
         }
-        // remove unused floor overrides
-        floorNameOverrides.keySet().retainAll(floorYs);
+//        // remove unused floor overrides
+//        floorNameOverrides.keySet().retainAll(floorYs);
         refreshRope();
         if (Config.debug) {
             debug("Floor scanning took " + (System.nanoTime() - startTime) / 1000000 + "ms");

@@ -182,16 +182,23 @@ public class BlockUtils {
             };
             // the door sound is:
             // block.<material>_<door>.open/close
-            NamespacedKey openSoundKey = NamespacedKey.minecraft("block." + materialType + "_" + doorType + ".open");
-            Sound openSound = Registry.SOUNDS.get(openSoundKey);
-            NamespacedKey closeSoundKey = NamespacedKey.minecraft("block." + materialType + "_" + doorType + ".close");
-            Sound closeSound = Registry.SOUNDS.get(closeSoundKey);
+            // except for normal fence gates, which is block.fence_gate.open/close
+            String baseKey;
+            if (doorType.equals("fence_gate") && materialType.equals("wooden"))
+                baseKey = "block." + doorType;
+            else
+                baseKey = "block." + materialType + "_" + doorType;
+            String openKey = baseKey + ".open";
+            String closeKey = baseKey + ".close";
+
+            Sound openSound = Registry.SOUNDS.get(NamespacedKey.minecraft(openKey));
+            Sound closeSound = Registry.SOUNDS.get(NamespacedKey.minecraft(closeKey));
             if (openSound == null) {
-                Elevator.LOGGER.warning("Failed to find open sound for " + blockData + "(" + openSoundKey + "), falling back to wooden door");
+                Elevator.LOGGER.warning("Failed to find open sound for " + blockData + "(" + openKey + "), falling back to wooden door");
                 openSound = Sound.BLOCK_WOODEN_DOOR_OPEN;
             }
             if (closeSound == null) {
-                Elevator.LOGGER.warning("Failed to find close sound for " + blockData + "(" + closeSoundKey + "), falling back to wooden door");
+                Elevator.LOGGER.warning("Failed to find close sound for " + blockData + "(" + closeKey + "), falling back to wooden door");
                 closeSound = Sound.BLOCK_WOODEN_DOOR_CLOSE;
             }
             return new Sound[] {openSound, closeSound};
