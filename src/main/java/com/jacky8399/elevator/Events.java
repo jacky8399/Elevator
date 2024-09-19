@@ -34,8 +34,10 @@ import org.bukkit.util.BoundingBox;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 
 import static com.jacky8399.elevator.Elevator.ADVNTR;
@@ -147,16 +149,18 @@ public class Events implements Listener {
         }
     }
 
+    private static final Set<Chunk> loadedChunks = new HashSet<>();
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent e) {
         Chunk chunk = e.getChunk();
         Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
-            if (chunk.isLoaded())
+            if (loadedChunks.add(chunk))
                 loadChunkElevators(chunk);
-        }, 5);
+        }, 10);
     }
 
     static void loadChunkElevators(Chunk chunk) {
+        loadedChunks.add(chunk);
         int loaded = 0;
         long gameTime = chunk.getWorld().getGameTime();
         for (BlockState state : chunk.getTileEntities()) {
@@ -189,11 +193,11 @@ public class Events implements Listener {
     @EventHandler
     public void onChunkUnload(ChunkUnloadEvent e) {
         Chunk chunk = e.getChunk();
-        boolean ticket = chunk.addPluginChunkTicket(Elevator.INSTANCE);
+        if (!loadedChunks.remove(chunk))
+            return;
         if (!chunk.isLoaded()) {
             Elevator.LOGGER.info("Chunk isn't loaded!!");
-            chunk.addPluginChunkTicket(Elevator.INSTANCE);
-            return;
+            e.getWorld().getChunkAt(chunk.getX(), chunk.getZ());
         }
         int unloaded = 0;
         for (BlockState state : chunk.getTileEntities()) {
@@ -207,8 +211,7 @@ public class Events implements Listener {
                 unloaded++;
             }
         }
-        if (ticket)
-            chunk.removePluginChunkTicket(Elevator.INSTANCE);
+
         if (Config.debug && unloaded != 0) {
             Elevator.LOGGER.info("Unloaded %d elevators for chunk %d, %d".formatted(unloaded, chunk.getX(), chunk.getZ()));
         }

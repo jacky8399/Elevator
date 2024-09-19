@@ -35,22 +35,22 @@ public class TransformationAnimation implements ElevatorAnimation {
     public static final int COLLISION_UPDATE_INTERVAL = 2;
 
     // animation properties
-    private final int ticksPerInterval;
-    private final int points;
-    private final List<ElevatorBlock> elevatorBlocks;
-    private final Transformation movingTransformation;
-    private final int teleportDistance;
+    protected final int ticksPerInterval;
+    protected final int points;
+    protected final List<ElevatorBlock> elevatorBlocks;
+    protected final Transformation movingTransformation;
+    protected final int teleportDistance;
 
     // transformation and duration for the final interpolation frame
-    private final Transformation finalTransformation;
-    private final int finalDuration;
-    private final Vector velocity;
+    protected final Transformation finalTransformation;
+    protected final int finalDuration;
+    protected final Vector velocity;
 
     // animation state
-    private int nextPoint = 0;
-    private int elapsed = 0;
+    protected int nextPoint = 0;
+    protected int elapsed = 0;
 
-    private final Location tempLocation;
+    protected final Location tempLocation;
 
     public TransformationAnimation(ElevatorController controller, List<ElevatorBlock> elevatorBlocks, int movementTime, int speed, Vector velocity) {
         // teleport display entities every 30 blocks travelled

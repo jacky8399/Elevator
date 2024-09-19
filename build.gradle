@@ -18,13 +18,18 @@ repositories {
     maven {
         url = 'https://repo.papermc.io/repository/maven-public/'
     }
+    maven {
+        url = "https://repo.dmulloy2.net/repository/public/"
+    }
 }
 
 dependencies {
 //    compileOnly "org.spigotmc:spigot-api:1.20.4-R0.1-SNAPSHOT"
-//    compileOnly "io.papermc.paper:paper-api:1.20.4-R0.1-SNAPSHOT"
     compileOnly("io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT")
     paperweight.paperDevBundle("1.21.1-R0.1-SNAPSHOT")
+
+    // ProtocolLib
+    compileOnly 'com.comphenix.protocol:ProtocolLib:5.3.0-SNAPSHOT'
 
     // Adventure
     implementation "net.kyori:adventure-api:4.17.0"

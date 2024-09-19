@@ -23,11 +23,11 @@ public class ElevatorManager {
     }
 
     public record PlayerElevator(ElevatorController controller, int floorDiff) {}
-    public static final WeakHashMap<Player, PlayerElevator> playerElevatorCache = new WeakHashMap<>();
+    public static final Map<Player, PlayerElevator> playerElevatorCache = new LinkedHashMap<>();
 
     // temporary way to let players redefine elevators
-    public static final WeakHashMap<Player, ElevatorController> playerEditingElevator = new WeakHashMap<>();
-    public static final WeakHashMap<Player, Location> playerEditingElevatorPos = new WeakHashMap<>();
+    public static final Map<Player, ElevatorController> playerEditingElevator = new WeakHashMap<>();
+    public static final Map<Player, Location> playerEditingElevatorPos = new WeakHashMap<>();
 
     public static final Map<Block, ElevatorController> managedDoors = new HashMap<>();
     // lookup map for elevator floor controller -> floor

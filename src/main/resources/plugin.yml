@@ -6,7 +6,8 @@ commands:
   elevator:
     usage: /elevator <...>
     permission: elevator.command
-
+softdepend:
+  - ProtocolLib
 permissions:
   elevator.*:
     default: op

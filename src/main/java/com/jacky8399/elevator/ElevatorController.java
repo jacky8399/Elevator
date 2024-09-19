@@ -129,8 +129,12 @@ public class ElevatorController {
         return cabin;
     }
 
+    public BoundingBox getScanCabin() {
+        return cabin.clone().expand(0.1, 0.1, 0.1, 0.1, -0.1, 0.1);
+    }
+
     private Collection<Entity> scanCabinEntities() {
-        BoundingBox lenientBox = cabin.clone().expand(0.1, 0.1, 0.1, 0.1, -0.1, 0.1);
+        BoundingBox lenientBox = getScanCabin();
         return world.getNearbyEntities(lenientBox, e -> {
             if (e instanceof Player player && player.getGameMode() == GameMode.SPECTATOR)
                 return false;
@@ -140,7 +144,7 @@ public class ElevatorController {
     }
 
     private Collection<Player> scanCabinPlayers() {
-        BoundingBox lenientBox = cabin.clone().expand(0.1, 0.1, 0.1, 0.1, -0.1, 0.1);
+        BoundingBox lenientBox = getScanCabin();
         var players = new ArrayList<Player>();
         for (var player : Bukkit.getOnlinePlayers()) {
             if (player.getGameMode() == GameMode.SPECTATOR) continue;
@@ -277,7 +281,7 @@ public class ElevatorController {
         for (ElevatorBlock block : movingBlocks) {
             if (block.display() != null) {
 //                block.stand().getLocation(location);
-                block.display().setTransformation(MathUtils.DEFAULT_TRANSFORMATION);
+//                block.display().setTransformation(MathUtils.DEFAULT_TRANSFORMATION);
 
                 if (block.blockState() == null) // don't place if virtual
                     continue;
@@ -330,7 +334,7 @@ public class ElevatorController {
         entity.getLocation(location);
         if (!moving) {
             // try to move players to the ground
-            if (entity instanceof Player) {
+            if (entity instanceof LivingEntity) {
                 var rayTrace = world.rayTraceBlocks(location, new Vector(0, -1, 0), 2, FluidCollisionMode.ALWAYS, true);
                 if (rayTrace != null) {
                     location.setY(rayTrace.getHitPosition().getY());

@@ -1,13 +1,16 @@
 package com.jacky8399.elevator;
 
 import com.jacky8399.elevator.animation.ElevatorAnimation;
+import com.jacky8399.elevator.animation.PacketTransformationAnimation;
 import com.jacky8399.elevator.animation.TransformationAnimation;
 import com.jacky8399.elevator.utils.BitmapGlyphInfo;
 import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Display;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -34,7 +37,13 @@ public final class Elevator extends JavaPlugin {
         INSTANCE = this;
         LOGGER = getLogger();
         ADVNTR = BukkitAudiences.create(this);
-        SCHEDULER = TransformationAnimation.FACTORY;
+
+        if (Bukkit.getPluginManager().isPluginEnabled("ProtocolLib")) {
+            LOGGER.info("Using packet-based animation.");
+            SCHEDULER = PacketTransformationAnimation.FACTORY;
+        } else {
+            SCHEDULER = TransformationAnimation.FACTORY;
+        }
 
         saveDefaultConfig();
         if (!new File(getDataFolder(), "messages.yml").exists())
@@ -119,5 +128,12 @@ public final class Elevator extends JavaPlugin {
         for (ElevatorController controller : ElevatorManager.elevators.values()) {
             controller.tick();
         }
+
+        ElevatorManager.playerElevatorCache.entrySet().removeIf(entry -> {
+            Player player = entry.getKey();
+            ElevatorManager.PlayerElevator elevator = entry.getValue();
+            Location location = player.getLocation();
+            return !elevator.controller().getScanCabin().contains(location.getX(), location.getY(), location.getZ());
+        });
     }
 }
