@@ -347,10 +347,14 @@ public class ElevatorController {
         }
         animation.onEnterCabin(this, entity);
 
+        if (entity instanceof Player player) {
+            ElevatorManager.playerMovingElevator.put(player, new ElevatorManager.PlayerMovingElevator(this));
+        }
+
         return location.getY() - cabin.getMinY();
     }
 
-    private void onLeaveMovingCabin(Entity entity, Location temp, double offset) {
+    public void onLeaveMovingCabin(Entity entity, Location temp, double offset) {
         entity.setGravity(true);
         entity.setFallDistance(0);
         // undo special treatment of players and hangables
@@ -364,6 +368,10 @@ public class ElevatorController {
         PaperUtils.teleport(entity, temp);
 
         animation.onLeaveCabin(this, entity);
+
+        if (entity instanceof Player player) {
+            ElevatorManager.playerMovingElevator.remove(player);
+        }
     }
 
     public void cleanUp() {

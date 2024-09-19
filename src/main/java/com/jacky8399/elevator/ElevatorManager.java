@@ -23,7 +23,11 @@ public class ElevatorManager {
     }
 
     public record PlayerElevator(ElevatorController controller, int floorDiff) {}
+    // stores information about players in a stationary elevator
     public static final Map<Player, PlayerElevator> playerElevatorCache = new LinkedHashMap<>();
+    public record PlayerMovingElevator(ElevatorController controller) {}
+    // stores information about players in a moving elevator
+    public static final Map<Player, PlayerMovingElevator> playerMovingElevator = new LinkedHashMap<>();
 
     // temporary way to let players redefine elevators
     public static final Map<Player, ElevatorController> playerEditingElevator = new WeakHashMap<>();

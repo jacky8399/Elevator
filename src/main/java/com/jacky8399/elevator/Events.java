@@ -26,11 +26,15 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.*;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.util.BoundingBox;
+import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -41,6 +45,7 @@ import java.util.Set;
 import java.util.logging.Level;
 
 import static com.jacky8399.elevator.Elevator.ADVNTR;
+import static com.jacky8399.elevator.Elevator.LOGGER;
 import static com.jacky8399.elevator.Messages.*;
 
 public class Events implements Listener {
@@ -156,7 +161,7 @@ public class Events implements Listener {
         Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
             if (loadedChunks.add(chunk))
                 loadChunkElevators(chunk);
-        }, 10);
+        }, 5);
     }
 
     static void loadChunkElevators(Chunk chunk) {
@@ -217,9 +222,68 @@ public class Events implements Listener {
         }
     }
 
+    public static final NamespacedKey ELEVATOR_ANCHOR = new NamespacedKey(Elevator.INSTANCE, "anchored_to");
+    public static final NamespacedKey ANCHOR_OFFSET = new NamespacedKey(Elevator.INSTANCE, "anchor_offset");
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent e) {
+        Player player = e.getPlayer();
+        PersistentDataContainer pdc = player.getPersistentDataContainer();
+        int[] anchor = pdc.get(ELEVATOR_ANCHOR, PersistentDataType.INTEGER_ARRAY);
+        if (anchor != null) {
+            Block block = player.getWorld().getBlockAt(anchor[0], anchor[1], anchor[2]);
+            List<Double> doubles = pdc.get(ANCHOR_OFFSET, PersistentDataType.LIST.doubles());
+            Vector offset = new Vector(doubles.get(0), doubles.get(1), doubles.get(2));
+            if (Config.debug) {
+                LOGGER.info("%s is anchored to (%d, %d, %d)".formatted(player.getName(), anchor[0], anchor[1], anchor[2]));
+            }
+            Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
+                ElevatorController controller = ElevatorManager.elevators.get(block);
+                if (controller != null) {
+                    Location playerLocation = player.getLocation();
+                    Vector destination = controller.getCabin().getMin().add(offset);
+                    playerLocation.set(destination.getX(), destination.getY(), destination.getZ());
+                    player.teleport(playerLocation);
+                } else {
+                    if (Config.debug) {
+                        LOGGER.info("Controller does not exist, skipping...");
+                    }
+                }
+            }, 10);
+
+            // finally remove the data
+            pdc.remove(ELEVATOR_ANCHOR);
+            pdc.remove(ANCHOR_OFFSET);
+        }
+    }
+
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent e) {
-        ElevatorManager.playerElevatorCache.remove(e.getPlayer());
+        Player player = e.getPlayer();
+        ElevatorController controller = null;
+
+        // clean up
+        ElevatorManager.playerEditingElevator.remove(player);
+        ElevatorManager.playerEditingElevatorPos.remove(player);
+
+        ElevatorManager.PlayerElevator stationaryElevator = ElevatorManager.playerElevatorCache.remove(player);
+        if (stationaryElevator != null)
+            controller = stationaryElevator.controller();
+        ElevatorManager.PlayerMovingElevator movingElevator = ElevatorManager.playerMovingElevator.remove(player);
+        if (movingElevator != null) {
+            controller = movingElevator.controller();
+            // instruct the controller to clean up
+            controller.onLeaveMovingCabin(player, player.getLocation(), controller.cabinEntities.get(player));
+        }
+
+        // anchor player to the controller
+        if (controller != null) {
+            Location offset = player.getLocation().subtract(controller.getCabin().getMin());
+            PersistentDataContainer pdc = player.getPersistentDataContainer();
+            pdc.set(ELEVATOR_ANCHOR, PersistentDataType.INTEGER_ARRAY,
+                    new int[] {controller.controller.getX(), controller.controller.getY(), controller.controller.getZ()});
+            pdc.set(ANCHOR_OFFSET, PersistentDataType.LIST.doubles(),
+                    List.of(offset.getX(), offset.getY(), offset.getZ()));
+        }
     }
 
     // block redstone signal to managed doors

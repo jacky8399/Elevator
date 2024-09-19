@@ -18,6 +18,7 @@ import com.jacky8399.elevator.utils.ProtocolUtils;
 import org.bukkit.Location;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.Player;
 import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
 
@@ -33,8 +34,8 @@ public class PacketTransformationAnimation extends TransformationAnimation {
         PROTOCOL.addPacketListener(new MovementPacketListener());
     }
 
-    static Set<Entity> packetInterceptDisplay = new HashSet<>();
-    static Map<Entity, Double> packetOffsets = new HashMap<>();
+    static Set<Entity> packetInterceptDisplay = Collections.synchronizedSet(new HashSet<>());
+    static Map<Entity, Double> packetOffsets = Collections.synchronizedMap(new HashMap<>());
 
     public PacketTransformationAnimation(ElevatorController controller, List<ElevatorBlock> elevatorBlocks, int movementTime, int speed, Vector velocity) {
         super(controller, elevatorBlocks, movementTime, speed, velocity);
@@ -51,8 +52,10 @@ public class PacketTransformationAnimation extends TransformationAnimation {
         super.onEnterCabin(controller, entity);
 
         Vector offset = velocity.clone().multiply(3d / 20);
-        PacketContainer tpPacket = ProtocolUtils.setRelativeLocation(entity, offset);
-        PROTOCOL.broadcastServerPacket(tpPacket, entity, false);
+        for (Player tracker : PROTOCOL.getEntityTrackers(entity)) {
+            PacketContainer tpPacket = ProtocolUtils.setRelativeLocation(entity, offset);
+            PROTOCOL.sendServerPacket(tracker, tpPacket, false);
+        }
         packetOffsets.put(entity, offset.getY());
     }
 
@@ -165,13 +168,15 @@ public class PacketTransformationAnimation extends TransformationAnimation {
 
         @Override
         public void onPacketSending(PacketEvent event) {
-            PacketContainer packet = event.getPacket();
+            PacketContainer packet = event.getPacket().deepClone();
             Entity entity = packet.getEntityModifier(event.getPlayer().getWorld()).read(0);
             Double offset = packetOffsets.get(entity);
             if (offset == null)
                 return;
 
-            packet.getDoubles().write(1, packet.getDoubles().read(1) + offset);
+            Double original = packet.getDoubles().read(1);
+            packet.getDoubles().write(1, original + offset);
+            event.setPacket(packet);
         }
     }
 

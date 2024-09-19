@@ -1,8 +1,10 @@
 package com.jacky8399.elevator;
 
+import com.comphenix.protocol.ProtocolLibrary;
 import com.jacky8399.elevator.utils.BlockUtils;
 import com.jacky8399.elevator.utils.FloorScan;
 import com.jacky8399.elevator.utils.ItemUtils;
+import com.jacky8399.elevator.utils.ProtocolUtils;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
@@ -13,6 +15,7 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
 import org.bukkit.entity.Display;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.util.StringUtil;
 import org.bukkit.util.Vector;
@@ -21,6 +24,8 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 
 import static com.jacky8399.elevator.Elevator.ADVNTR;
 import static com.jacky8399.elevator.Messages.*;
@@ -84,6 +89,15 @@ public class CommandElevator implements TabExecutor {
                     return true;
                 Config.debug = !Config.debug;
                 player.sendMessage("Set debug to " + Config.debug);
+            }
+            case "debugoffset" -> {
+                if (!checkPermission(player, "command.debug"))
+                    return true;
+                UUID uuid = UUID.fromString(args[1]);
+                double offset = Double.parseDouble(args[2]);
+                Entity entity = Objects.requireNonNull(player.getWorld().getEntity(uuid));
+                var packet = ProtocolUtils.setRelativeLocation(entity, new Vector(0, offset, 0));
+                ProtocolLibrary.getProtocolManager().broadcastServerPacket(packet, entity, false);
             }
             case "resize" -> {
                 if (!checkPermission(player, "command.resize"))
