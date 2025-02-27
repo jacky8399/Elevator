@@ -19,7 +19,6 @@ import org.bukkit.Location;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
-import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
 
 import java.util.*;
@@ -122,8 +121,7 @@ public class PacketTransformationAnimation extends TransformationAnimation {
                     controller.debug("[Animation] At tick %d: resetting transformation for final point %d".formatted(elapsed, nextPoint));
                 }
                 ElevatorBlock.forEachDisplay(elevatorBlocks, display -> {
-                    Transformation transformation = MathUtils.withTranslation(display.getTransformation(), MathUtils.DEFAULT_TRANSLATION);
-                    packets.put(display, ProtocolUtils.setDisplayProperties(display, transformation, 0));
+                    packets.put(display, ProtocolUtils.setDisplayTranslation(display, MathUtils.DEFAULT_TRANSLATION, 0));
                 });
             }
         }
@@ -131,10 +129,7 @@ public class PacketTransformationAnimation extends TransformationAnimation {
             if (!RECALCULATE_FINAL_STRETCH || nextPoint != points) {
                 if (nextPoint == 0) {
                     ElevatorBlock.forEachDisplay(elevatorBlocks, display -> {
-                        packets.put(display, ProtocolUtils.setDisplayProperties(display, movingTransformation, ticksPerInterval));
-                    }, textDisplay -> {
-                        Transformation transformation = MathUtils.withTranslation(textDisplay.getTransformation(), movingTransformation.getTranslation());
-                        packets.put(textDisplay, ProtocolUtils.setDisplayProperties(textDisplay, transformation, ticksPerInterval));
+                        packets.put(display, ProtocolUtils.setDisplayTranslation(display, movingTransformation.getTranslation(), ticksPerInterval));
                     });
                 } else {
                     ElevatorBlock.forEachDisplay(elevatorBlocks, display -> packets.put(display, ProtocolUtils.setDisplayDelay(display)));
@@ -148,10 +143,7 @@ public class PacketTransformationAnimation extends TransformationAnimation {
                     controller.debug("[Animation] At tick %d: updating transformations (using final interpolation frame) for point %d".formatted(elapsed, nextPoint));
                 }
                 ElevatorBlock.forEachDisplay(elevatorBlocks, display -> {
-                    packets.put(display, ProtocolUtils.setDisplayProperties(display, finalTransformation, finalDuration));
-                }, textDisplay -> {
-                    Transformation transformation = MathUtils.withTranslation(textDisplay.getTransformation(), finalTransformation.getTranslation());
-                    packets.put(textDisplay, ProtocolUtils.setDisplayProperties(textDisplay, transformation, ticksPerInterval));
+                    packets.put(display, ProtocolUtils.setDisplayTranslation(display, finalTransformation.getTranslation(), finalDuration));
                 });
             }
             nextPoint++;

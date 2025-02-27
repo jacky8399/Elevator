@@ -136,10 +136,20 @@ public class ElevatorController {
     private Collection<Entity> scanCabinEntities() {
         BoundingBox lenientBox = getScanCabin();
         return world.getNearbyEntities(lenientBox, e -> {
+            if (ElevatorBlock.excludedEntities.contains(e))
+                return false;
+
             if (e instanceof Player player && player.getGameMode() == GameMode.SPECTATOR)
                 return false;
+            if (e instanceof LivingEntity livingEntity) {
+                Location location = livingEntity.getLocation();
+                Location eyeLocation = livingEntity.getEyeLocation();
+                // ensure that they aren't merely touching the elevator
+                return lenientBox.contains(location.getX(), location.getY(), location.getZ()) ||
+                        lenientBox.contains(eyeLocation.getX(), eyeLocation.getY(), eyeLocation.getZ());
+            }
             // these entities might be safe to teleport
-            return !ElevatorBlock.excludedEntities.contains(e) && e instanceof LivingEntity || e instanceof Hanging || e instanceof Vehicle || e instanceof Item;
+            return e instanceof Vehicle || e instanceof Item;
         });
     }
 
@@ -387,7 +397,9 @@ public class ElevatorController {
             if (floor.source != null)
                 ElevatorManager.managedFloors.remove(floor.source);
         }
-        managedDoors.forEach(ElevatorManager.managedDoors::remove);
+        for (Block managedDoor : managedDoors) {
+            ElevatorManager.managedDoors.remove(managedDoor);
+        }
         managedDoors.clear();
         managedSigns.clear();
 
@@ -768,7 +780,8 @@ public class ElevatorController {
 
             entity.getLocation(temp);
             // check if still in cabin
-            if (!veryLenientBox.contains(temp.getX(), temp.getY(), temp.getZ())) {
+            if (!veryLenientBox.contains(temp.getX(), temp.getY(), temp.getZ()) ||
+                    (entity instanceof Player player && player.getGameMode() == GameMode.SPECTATOR)) {
                 onLeaveMovingCabin(entity, temp, offset);
                 iter.remove();
                 continue;
@@ -915,6 +928,7 @@ public class ElevatorController {
         }
     }
 
+    public static final @NotNull BlockData AIR = Material.AIR.createBlockData();
     void refreshRope() {
         BlockData ropeMaterial = Config.elevatorRopeBlock;
 
@@ -932,7 +946,7 @@ public class ElevatorController {
             // remove excess
             for (int i = expectedLength; i < currentLength; i++) {
                 Block block = controller.getRelative(0, -i - 1, 0);
-                block.setType(Material.AIR, false);
+                block.setBlockData(AIR, false);
             }
         }
         ropeLength = expectedLength;
@@ -942,7 +956,7 @@ public class ElevatorController {
         for (int i = 1; i <= ropeLength; i++) {
             Block block = controller.getRelative(0, -i, 0);
             if (block.getBlockData().matches(Config.elevatorRopeBlock)) {
-                block.setType(Material.AIR, false);
+                block.setBlockData(AIR, false);
             }
         }
         ropeLength = 0;

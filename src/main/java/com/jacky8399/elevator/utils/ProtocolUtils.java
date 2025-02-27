@@ -12,7 +12,6 @@ import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
-import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -44,10 +43,16 @@ public class ProtocolUtils {
     public static PacketContainer setLocation(Entity entity, Location location) {
         PacketContainer packet = new PacketContainer(PacketType.Play.Server.ENTITY_TELEPORT);
         packet.getEntityModifier(entity.getWorld()).write(0, entity);
-        packet.getDoubles() // XYZ
-                .write(0, location.getX())
-                .write(1, location.getY())
-                .write(2, location.getZ());
+        if (packet.getVectors().size() != 0) {
+            // https://github.com/dmulloy2/ProtocolLib/issues/3341
+            packet.getVectors()
+                    .write(0, location.toVector());
+        } else {
+            packet.getDoubles() // XYZ
+                    .write(0, location.getX())
+                    .write(1, location.getY())
+                    .write(2, location.getZ());
+        }
         packet.getBytes().write(0, (byte) 0).write(1, (byte) 0);
         packet.getBooleans().write(0, false); // on ground
         return packet;
@@ -70,7 +75,7 @@ public class ProtocolUtils {
         return packet;
     }
 
-    public static PacketContainer setDisplayProperties(Display display, Transformation transformation, int interpolationDuration) {
+    public static PacketContainer setDisplayTranslation(Display display, Vector3f translation, int interpolationDuration) {
         PacketContainer packet = new PacketContainer(PacketType.Play.Server.ENTITY_METADATA);
         packet.getEntityModifier(display.getWorld()).write(0, display);
         List<WrappedDataValue> values = new ArrayList<>();
@@ -80,8 +85,8 @@ public class ProtocolUtils {
         }
         values.add(dataValueRaw(INTERPOLATION_DELAY, 0));
         values.add(dataValueRaw(INTERPOLATION_DURATION, interpolationDuration));
-        values.add(dataValueRaw(TRANSLATION, transformation.getTranslation()));
-        values.add(dataValueRaw(SCALE, transformation.getScale()));
+        values.add(dataValueRaw(TRANSLATION, translation));
+//        values.add(dataValueRaw(SCALE, transformation.getScale()));
 //        values.add(dataValueRaw(ROTATION_LEFT, transformation.getLeftRotation()));
 //        values.add(dataValueRaw(ROTATION_RIGHT, transformation.getRightRotation()));
         packet.getDataValueCollectionModifier().write(0, values);

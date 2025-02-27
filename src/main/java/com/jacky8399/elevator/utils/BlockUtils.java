@@ -74,6 +74,11 @@ public class BlockUtils {
     }
 
     private static final double BLOCK_FACE_ANGLE_FACTOR = 2 * Math.PI / 16;
+    /**
+     * Gets the yaw of the text display rotated to face {@code blockFace}
+     * @param blockFace The direction
+     * @return The yaw, in radians
+     */
     public static double getSignAngle(BlockFace blockFace) {
         return switch (blockFace) {
             case SOUTH -> 0;
@@ -94,6 +99,15 @@ public class BlockUtils {
             case SOUTH_SOUTH_EAST -> 15 * BLOCK_FACE_ANGLE_FACTOR;
             default -> throw new IllegalArgumentException(blockFace + " is not horizontal");
         };
+    }
+
+    /**
+     * Gets the yaw of the item display rotated to face {@code blockFace}
+     * @param blockFace The direction
+     * @return The yaw, in radians
+     */
+    public static double getItemDisplayAngle(BlockFace blockFace) {
+        return getSignAngle(blockFace) - Math.PI;
     }
 
     // yeah ok sure whatever

@@ -124,11 +124,7 @@ public class TransformationAnimation implements ElevatorAnimation {
                 ElevatorBlock.forEachDisplay(elevatorBlocks, display -> {
                     display.setInterpolationDelay(0);
                     display.setInterpolationDuration(ticksPerInterval);
-                    display.setTransformation(movingTransformation);
-                }, textDisplay -> {
-                    textDisplay.setInterpolationDelay(0);
-                    textDisplay.setInterpolationDuration(ticksPerInterval);
-                    textDisplay.setTransformation(MathUtils.withTranslation(textDisplay.getTransformation(), movingTransformation.getTranslation()));
+                    display.setTransformation(MathUtils.withTranslation(display.getTransformation(), movingTransformation.getTranslation()));
                 });
             } else { // apply special transformation and duration for final interpolation frame
                 if (Config.debug) {
@@ -137,11 +133,7 @@ public class TransformationAnimation implements ElevatorAnimation {
                 ElevatorBlock.forEachDisplay(elevatorBlocks, display -> {
                     display.setInterpolationDelay(0);
                     display.setInterpolationDuration(finalDuration);
-                    display.setTransformation(finalTransformation);
-                }, textDisplay -> {
-                    textDisplay.setInterpolationDelay(0);
-                    textDisplay.setInterpolationDuration(ticksPerInterval);
-                    textDisplay.setTransformation(MathUtils.withTranslation(textDisplay.getTransformation(), finalTransformation.getTranslation()));
+                    display.setTransformation(MathUtils.withTranslation(display.getTransformation(), finalTransformation.getTranslation()));
                 });
             }
             nextPoint++;

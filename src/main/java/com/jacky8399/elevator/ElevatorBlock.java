@@ -8,18 +8,16 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.JoinConfiguration;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.format.TextColor;
-import org.bukkit.Color;
-import org.bukkit.DyeColor;
-import org.bukkit.Location;
-import org.bukkit.World;
-import org.bukkit.block.Block;
-import org.bukkit.block.BlockState;
-import org.bukkit.block.HangingSign;
-import org.bukkit.block.Sign;
+import org.bukkit.*;
+import org.bukkit.block.*;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Directional;
+import org.bukkit.block.data.Rotatable;
 import org.bukkit.block.sign.Side;
 import org.bukkit.block.sign.SignSide;
 import org.bukkit.entity.*;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.BannerMeta;
 import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -28,7 +26,7 @@ import org.joml.Vector3f;
 import java.util.*;
 import java.util.function.Consumer;
 
-public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, BlockState blockState,
+public record ElevatorBlock(BlockPos pos, @Nullable Display display, BlockState blockState,
                             @Nullable List<TextDisplay> textDisplays,
                             @Nullable ArmorStand collisionBase, @Nullable Shulker collision,
                             @NotNull Set<Flag> flags) {
@@ -37,15 +35,9 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, BlockS
 
     public static ElevatorBlock spawnFor(World world, Block base, Set<Integer> noCollisionYs, Block block, Vector offset) {
         Location location = block.getLocation().add(offset);
-
-        BlockData data = block.getBlockData();
         BlockState state = block.getState();
 
-        BlockDisplay display = world.spawn(location, BlockDisplay.class, e -> {
-            e.setBlock(data);
-            e.setTeleportDuration(0);
-            e.setPersistent(false);
-        });
+        Display display = spawnBlockDisplay(world, state, location);
         Set<Flag> flags = Set.of();
         List<TextDisplay> textDisplays = null;
         if (state instanceof Sign sign) {
@@ -109,6 +101,53 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, BlockS
         return list;
     }
 
+    static Display spawnBlockDisplay(World world, BlockState state, Location location) {
+        if (state instanceof Banner banner) {
+            location = location.clone();
+            BlockData blockData = banner.getBlockData();
+            Material material;
+            if (blockData instanceof Directional directional) { // wall banner
+                String key = directional.getMaterial().getKey().getKey();
+                // evil key manipulation
+                // light_gray_wall_banner
+                material = Objects.requireNonNull(Registry.MATERIAL.get(NamespacedKey.minecraft(key.substring(0, key.length() - 12) + "_banner")));
+                location.add(0.5, -0.5, 0.5)
+                        .add(directional.getFacing().getOppositeFace().getDirection().multiply(0.45));
+                location.setYaw((float) Math.toDegrees(BlockUtils.getItemDisplayAngle(directional.getFacing())));
+            } else {
+                Rotatable rotatable = (Rotatable) blockData;
+                material = rotatable.getMaterial();
+                location.add(0.5, 0, 0.5);
+                location.setYaw((float) Math.toDegrees(BlockUtils.getItemDisplayAngle(rotatable.getRotation())));
+            }
+            ItemStack stack = new ItemStack(material);
+            BannerMeta meta = (BannerMeta) stack.getItemMeta();
+            meta.setPatterns(banner.getPatterns());
+            stack.setItemMeta(meta);
+            return world.spawn(location, ItemDisplay.class, itemDisplay -> {
+                itemDisplay.setItemStack(stack);
+                itemDisplay.setTeleportDuration(0);
+                itemDisplay.setPersistent(false);
+            });
+        } else if (state instanceof org.bukkit.block.Sign signState) {
+            // MC-256649 - fixed in 1.21.4
+//        } else if (state instanceof Chest chest) {
+//            location = location.clone();
+//            Directional blockData = (Directional) chest.getBlockData();
+//            location.setYaw((float) Math.toDegrees(BlockUtils.getItemDisplayAngle(blockData.getFacing())));
+//            return world.spawn(location, BlockDisplay.class, blockDisplay -> {
+//                blockDisplay.setBlock(blockData);
+//                blockDisplay.setTeleportDuration(0);
+//                blockDisplay.setPersistent(false);
+//            });
+        }
+        return world.spawn(location, BlockDisplay.class, blockDisplay -> {
+            blockDisplay.setBlock(state.getBlockData());
+            blockDisplay.setTeleportDuration(0);
+            blockDisplay.setPersistent(false);
+        });
+    }
+
     private static final Color TRANSPARENT = Color.fromARGB(0x00000000);
     private static final Vector3f SIGN_SCALE = new Vector3f(0.425f);
     private static final Vector3f HANGING_SIGN_SCALE = new Vector3f(0.55f);
@@ -166,7 +205,7 @@ public record ElevatorBlock(BlockPos pos, @Nullable BlockDisplay display, BlockS
         forEachDisplay(iterable, displayConsumer, displayConsumer);
     }
 
-    public static void forEachDisplay(Iterable<ElevatorBlock> iterable, Consumer<? super BlockDisplay> blockDisplayConsumer, Consumer<? super TextDisplay> textDisplayConsumer) {
+    public static void forEachDisplay(Iterable<ElevatorBlock> iterable, Consumer<? super Display> blockDisplayConsumer, Consumer<? super TextDisplay> textDisplayConsumer) {
         for (ElevatorBlock block : iterable) {
             if (block.display != null)
                 blockDisplayConsumer.accept(block.display);

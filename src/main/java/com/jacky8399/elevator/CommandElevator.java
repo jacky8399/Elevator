@@ -9,6 +9,7 @@ import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.block.Banner;
 import org.bukkit.block.Block;
 import org.bukkit.block.Sign;
 import org.bukkit.command.Command;
@@ -128,7 +129,7 @@ public class CommandElevator implements TabExecutor {
                 player.sendMessage(ChatColor.GREEN + "Redefined border");
 
             }
-            case "maintenance" -> {
+            case "maintenance", "mt" -> {
                 if (!checkPermission(player, "command.maintenance"))
                     return true;
                 var elevator = checkElevator(player);
@@ -241,6 +242,15 @@ public class CommandElevator implements TabExecutor {
                     BlockUtils.ensureCleanUp(displays, 10 * 20);
                 }
             }
+            case "banner" -> {
+                if (!checkPermission(player, "command.debug"))
+                    return true;
+                Block block = player.getTargetBlockExact(5);
+                if (block != null && block.getState() instanceof Banner banner) {
+                    var display = ElevatorBlock.spawnBlockDisplay(block.getWorld(), banner, block.getLocation().add(0, 2, 0));
+                    BlockUtils.ensureCleanUp(List.of(display), 10 * 20);
+                }
+            }
             default -> player.sendMessage(ChatColor.RED + "Unknown command " + args[0]);
         }
         return true;
@@ -250,12 +260,12 @@ public class CommandElevator implements TabExecutor {
     @Override
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         List<String> strings = switch (args.length) {
-            default -> List.of();
-            case 1 -> List.of("givecontroller", "up", "down", "scan", "maintenance", "resize", "setspeed", "setmaxheight");
+            case 1 -> List.of("givecontroller", "up", "down", "scan", "maintenance", "mt", "resize", "setspeed", "setmaxheight");
             case 2 -> switch (args[0]) {
                 case "setspeed" -> List.of("1", "2", "4", "5", "10", "20");
                 default -> List.of();
             };
+            default -> List.of();
         };
         return StringUtil.copyPartialMatches(args[args.length - 1], strings, new ArrayList<>());
     }
