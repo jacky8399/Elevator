@@ -70,6 +70,20 @@ public sealed interface FloorScan {
 
     record NoScanner(BoundingBox scanBox, List<ElevatorController.ElevatorFloor> floors, int currentFloor) implements Success {}
 
+    enum Deferred implements FloorScan {
+        INSTANCE;
+
+        @Override
+        public Component getMessage() {
+            return Component.empty();
+        }
+
+        @Override
+        public List<Display> createDisplay(ElevatorController controller, Player player) {
+            return List.of();
+        }
+    }
+
     enum NoScannerDisallowed implements FloorScan {
         INSTANCE;
 

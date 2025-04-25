@@ -57,11 +57,13 @@ public final class Elevator extends JavaPlugin {
         Bukkit.getScheduler().runTaskTimer(this, this::tick, 0, 1);
 
         // load all elevators
-        for (World world : Bukkit.getWorlds()) {
-            for (Chunk chunk : world.getLoadedChunks()) {
-                Events.loadChunkElevators(chunk);
+        Bukkit.getScheduler().runTask(this, () -> {
+            for (World world : Bukkit.getWorlds()) {
+                for (Chunk chunk : world.getLoadedChunks()) {
+                    Events.loadChunkElevators(chunk);
+                }
             }
-        }
+        });
 
         // force load BitmapGlyphInfo
         long start = System.nanoTime();
@@ -107,7 +109,9 @@ public final class Elevator extends JavaPlugin {
     public void reloadConfig() {
         // remove all ropes
         for (ElevatorController controller : ElevatorManager.elevators.values()) {
-            controller.removeRope();
+            if (controller.isActive()) {
+                controller.removeRope();
+            }
         }
 
         super.reloadConfig();
@@ -126,7 +130,12 @@ public final class Elevator extends JavaPlugin {
 
     public void tick() {
         for (ElevatorController controller : ElevatorManager.elevators.values()) {
-            controller.tick();
+            try {
+                controller.tick();
+            } catch (Exception ex) {
+                LOGGER.log(Level.SEVERE, "Failed to tick elevator at (%d,%d,%d)".formatted(
+                        controller.controller.getX(), controller.controller.getY(), controller.controller.getZ()), ex);
+            }
         }
 
         ElevatorManager.playerElevatorCache.entrySet().removeIf(entry -> {

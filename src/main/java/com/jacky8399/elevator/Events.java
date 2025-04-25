@@ -138,7 +138,7 @@ public class Events implements Listener {
                     audience.sendMessage(msgEditCabinPos2);
                 } else {
                     BoundingBox bb = BoundingBox.of(firstPos.getBlock(), block);
-                    editingController.cabin.resize(bb.getMinX(), bb.getMinY(), bb.getMinZ(), bb.getMaxX(), bb.getMaxY(), bb.getMaxZ());
+                    editingController.resizeCabin(bb.getMinX(), bb.getMinY(), bb.getMinZ(), bb.getMaxX(), bb.getMaxY(), bb.getMaxZ());
                     editingController.scanFloors();
                     editingController.showOutline(player);
                     audience.sendMessage(msgEditCabinSuccess);
@@ -158,14 +158,17 @@ public class Events implements Listener {
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent e) {
         Chunk chunk = e.getChunk();
-        Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
-            if (loadedChunks.add(chunk))
-                loadChunkElevators(chunk);
-        }, 5);
+        if (loadedChunks.add(chunk))
+            loadChunkElevators(chunk);
+        else
+            LOGGER.warning("ChunkLoadEvent called for already-loaded chunk %d,%d!".formatted(chunk.getX(), chunk.getZ()));
     }
 
     static void loadChunkElevators(Chunk chunk) {
         loadedChunks.add(chunk);
+        if (!chunk.isLoaded()) {
+            LOGGER.warning("Chunk %d,%d isn't loaded!!".formatted(chunk.getX(), chunk.getZ()));
+        }
         int loaded = 0;
         long gameTime = chunk.getWorld().getGameTime();
         for (BlockState state : chunk.getTileEntities()) {
@@ -176,14 +179,6 @@ public class Events implements Listener {
                         Config.debug ? new RuntimeException() : null);
                 continue;
             }
-            if (ElevatorManager.recentlyUnloadedElevators.get(block) instanceof Long unloadedAt) {
-                if (gameTime - unloadedAt < 2) {
-                    Elevator.LOGGER.warning("Elevator at %d, %d, %d was unloaded %d ticks ago! Skipping...".formatted(
-                            block.getX(), block.getY(), block.getZ(), gameTime - unloadedAt
-                    ));
-                    continue;
-                }
-            }
             ElevatorController controller = ElevatorController.load(block, (TileState) state);
             if (controller != null) {
                 ElevatorManager.elevators.put(block, controller);
@@ -191,7 +186,7 @@ public class Events implements Listener {
             }
         }
         if (Config.debug && loaded != 0) {
-            Elevator.LOGGER.info("Loaded %d elevators for chunk %d, %d".formatted(loaded, chunk.getX(), chunk.getZ()));
+            Elevator.LOGGER.log(Level.INFO, "Loaded %d elevators for chunk %d, %d".formatted(loaded, chunk.getX(), chunk.getZ()));
         }
     }
 
@@ -201,7 +196,7 @@ public class Events implements Listener {
         if (!loadedChunks.remove(chunk))
             return;
         if (!chunk.isLoaded()) {
-            Elevator.LOGGER.info("Chunk isn't loaded!!");
+            Elevator.LOGGER.warning("Chunk %d,%d isn't loaded!!".formatted(chunk.getX(), chunk.getZ()));
             e.getWorld().getChunkAt(chunk.getX(), chunk.getZ());
         }
         int unloaded = 0;
@@ -218,7 +213,7 @@ public class Events implements Listener {
         }
 
         if (Config.debug && unloaded != 0) {
-            Elevator.LOGGER.info("Unloaded %d elevators for chunk %d, %d".formatted(unloaded, chunk.getX(), chunk.getZ()));
+            Elevator.LOGGER.log(Level.INFO, "Unloaded %d elevators for chunk %d, %d".formatted(unloaded, chunk.getX(), chunk.getZ()));
         }
     }
 

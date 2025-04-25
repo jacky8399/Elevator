@@ -4,13 +4,10 @@ import org.bukkit.Location;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.WeakHashMap;
+import java.util.*;
 
 public class ElevatorManager {
-    public static final Map<Block, ElevatorController> elevators = new LinkedHashMap<>();
+    public static final Map<Block, ElevatorController> elevators = Collections.synchronizedMap(new LinkedHashMap<>());
     public static final Map<Block, Long> recentlyUnloadedElevators = new HashMap<>();
 
     public static void cleanUp() {

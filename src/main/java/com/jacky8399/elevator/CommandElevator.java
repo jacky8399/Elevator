@@ -18,6 +18,7 @@ import org.bukkit.command.TabExecutor;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.util.BoundingBox;
 import org.bukkit.util.StringUtil;
 import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
@@ -121,12 +122,13 @@ public class CommandElevator implements TabExecutor {
                 int z2 = Integer.parseInt(args[6]);
 
                 ElevatorController controller = cache.controller();
-                controller.cabin.resize(
+                BoundingBox boundingBox = controller.resizeCabin(
                         Math.min(x1, x2), Math.min(y1, y2), Math.min(z1, z2),
                         Math.max(x1, x2) + 1, Math.max(y1, y2) + 1, Math.max(z1, z2) + 1
                 );
                 controller.scanFloors();
-                player.sendMessage(ChatColor.GREEN + "Redefined border");
+                player.sendMessage(ChatColor.GREEN + "Redefined border to (%f, %f, %f) -> (%f, %f, %f)".formatted(
+                        boundingBox.getMinX(), boundingBox.getMinY(), boundingBox.getMinZ(), boundingBox.getMaxX(), boundingBox.getMaxY(), boundingBox.getMaxZ()));
 
             }
             case "maintenance", "mt" -> {

@@ -29,6 +29,7 @@ import java.util.Comparator;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.logging.Level;
+import java.util.stream.Collectors;
 
 import static com.jacky8399.elevator.Elevator.ADVNTR;
 import static com.jacky8399.elevator.Elevator.LOGGER;
@@ -38,12 +39,16 @@ public class ElevatorController {
     public static final double OMG_MAGICAL_DRAG_CONSTANT = 0.9800000190734863D;
 
     @NotNull
-    World world;
+    final World world;
+    final Block controller;
 
-    Block controller;
+    // array of chunk keys required to be loaded for this elevator to be considered active
+    long[] chunksRequired;
+    // whether a floor scan is scheduled when this elevator is next active
+    boolean floorScanScheduled;
 
     @NotNull
-    BoundingBox cabin;
+    private BoundingBox cabin;
 
     boolean maintenance;
     boolean moving;
@@ -113,6 +118,7 @@ public class ElevatorController {
         this.world = world;
         this.controller = controller;
         this.cabin = cabin.clone();
+        chunksRequired = calcChunksRequired(this.cabin);
     }
 
     // constructor for deserialization
@@ -120,18 +126,47 @@ public class ElevatorController {
         this.world = loadingBlock.getWorld();
         this.controller = loadingBlock;
         this.cabin = cabin.clone();
+        chunksRequired = calcChunksRequired(this.cabin);
+        if (Config.debug) {
+            LOGGER.info("Elevator at (%d,%d,%d) requires [%s] to be loaded".formatted(
+                    controller.getX(), controller.getY(), controller.getZ(),
+                    ChunkPos.toString(chunksRequired)
+            ));
+        }
     }
 
     public Block getController() {
         return controller;
     }
 
+    @NotNull
     public BoundingBox getCabin() {
-        return cabin;
+        return cabin.clone();
     }
 
+    @NotNull
     public BoundingBox getScanCabin() {
         return cabin.clone().expand(0.1, 0.1, 0.1, 0.1, -0.1, 0.1);
+    }
+
+    @NotNull
+    public BoundingBox resizeCabin(double x1, double y1, double z1, double x2, double y2, double z2) {
+        BoundingBox boundingBox = cabin.resize(x1, y1, z1, x2, y2, z2);
+        chunksRequired = calcChunksRequired(boundingBox);
+        return boundingBox;
+    }
+
+    private static long[] calcChunksRequired(BoundingBox boundingBox) {
+        return ChunkPos.fromArea((((int) boundingBox.getMinX()) - 1) >> 4, (((int) boundingBox.getMaxX()) + 1) >> 4,
+                (((int) boundingBox.getMinZ()) - 1) >> 4, (((int) boundingBox.getMaxZ()) + 1) >> 4);
+    }
+
+    public boolean isActive() {
+        for (long chunkKey : chunksRequired) {
+            if (!ChunkPos.isLoaded(world, chunkKey))
+                return false;
+        }
+        return true;
     }
 
     private Collection<Entity> scanCabinEntities() {
@@ -392,6 +427,21 @@ public class ElevatorController {
 
     public FloorScan scanFloors() {
         long startTime = System.nanoTime();
+        if (!isActive()) {
+            floorScanScheduled = true;
+            if (Config.debug) {
+                String unloaded = Arrays.stream(chunksRequired)
+                        .filter(l -> !ChunkPos.isLoaded(world, l))
+                        .mapToObj(ChunkPos::toString)
+                        .collect(Collectors.joining(", "));
+                LOGGER.info("Floor scanning for %d,%d,%d (in chunk %d,%d) deferred due to unloaded chunks %s".formatted(
+                        controller.getX(), controller.getY(), controller.getZ(),
+                        controller.getX() >> 4, controller.getZ() >> 4,
+                        unloaded
+                ));
+            }
+            return FloorScan.Deferred.INSTANCE;
+        }
         removeRope();
         // clear previous floors from the global cache
         for (ElevatorFloor floor : floors) {
@@ -589,6 +639,9 @@ public class ElevatorController {
 
     private static final int DEFAULT_SPEED = 5;
     private void moveTo(int y) {
+        if (!isActive())
+            return;
+
         if (maintenance)
             return;
         int originalY = (int) cabin.getMinY();
@@ -618,6 +671,20 @@ public class ElevatorController {
             cleanUp();
             ElevatorManager.removeElevator(this); // don't save
             return;
+        }
+
+        if (!isActive())
+            return;
+
+        if (floorScanScheduled) {
+            floorScanScheduled = false;
+            scanFloors();
+            if (Config.debug) {
+                LOGGER.info("Deferred scanning for %d,%d,%d (in chunk %d,%d) executed".formatted(
+                        controller.getX(), controller.getY(), controller.getZ(),
+                        controller.getX() >> 4, controller.getZ() >> 4
+                ));
+            }
         }
 
         if (maintenance) {
@@ -654,6 +721,9 @@ public class ElevatorController {
                 for (int i = 0; i < floors.size(); i++) {
                     var floor = floors.get(i);
                     if (floor.source != null && floor.y != currentY) {
+                        // check if chunk is loaded first
+                        if (!world.isChunkLoaded(floor.source.getX() >> 4, floor.source.getZ() >> 4))
+                            throw new RuntimeException(floor.source + " chunk should be loaded");
                         BlockData data = floor.source.getBlockData();
                         if (data.getMaterial() == Config.elevatorFloorBlock && floor.source.isBlockIndirectlyPowered()) {
                             if (Config.debug)
@@ -745,7 +815,7 @@ public class ElevatorController {
         }
     }
 
-    void doMovementTick() {
+    private void doMovementTick() {
         boolean debug = Config.debug;
         movementTime--;
 
@@ -939,6 +1009,9 @@ public class ElevatorController {
 
     public static final @NotNull BlockData AIR = Material.AIR.createBlockData();
     void refreshRope() {
+        if (!isActive())
+            return;
+
         BlockData ropeMaterial = Config.elevatorRopeBlock;
 
         int expectedLength = Math.max(0, (int) Math.floor(controller.getY() - cabin.getMaxY() +
@@ -1006,15 +1079,10 @@ public class ElevatorController {
             if (controller == null)
                 return null;
             if (Config.debug) {
-//                LOGGER.log(Level.INFO, "Loading " + block, new RuntimeException("Stack trace"));
                 LOGGER.log(Level.INFO, "Loading " + block);
             }
-            controller.controller = block;
-            controller.world = block.getWorld();
-            Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, () -> {
-                controller.scanFloors();
-                controller.refreshRope();
-            }, 1);
+            Bukkit.getScheduler().runTaskLater(Elevator.INSTANCE, controller::scanFloors, 1);
+            loadingBlock = null;
             return controller;
         } catch (Exception ex) {
             LOGGER.log(Level.SEVERE, "Failed to load ElevatorController at (%d, %d, %d)".formatted(block.getX(), block.getY(), block.getZ()), ex);
@@ -1024,7 +1092,6 @@ public class ElevatorController {
 
     public void save() {
         if (Config.debug) {
-//            LOGGER.log(Level.INFO, "Saving " + controller, new RuntimeException("Stack trace"));
             LOGGER.log(Level.INFO, "Saving " + controller);
         }
         TileState state = (TileState) controller.getState();
