@@ -40,7 +40,7 @@ public class ProtocolUtils {
     public static final WrappedDataWatcherObject ROTATION_LEFT = dataWatcher(13, Quaternionf.class);
     public static final WrappedDataWatcherObject ROTATION_RIGHT = dataWatcher(14, Quaternionf.class);
 
-    private static final PacketType ENTITY_POSITION_SYNC;
+    public static final PacketType ENTITY_POSITION_SYNC;
     static {
         PacketType entityPositionSync = null;
         try {

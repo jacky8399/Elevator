@@ -3,6 +3,7 @@ package com.jacky8399.elevator.animation;
 import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.ProtocolLibrary;
 import com.comphenix.protocol.ProtocolManager;
+import com.comphenix.protocol.events.InternalStructure;
 import com.comphenix.protocol.events.PacketAdapter;
 import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.events.PacketEvent;
@@ -29,7 +30,7 @@ public class PacketTransformationAnimation extends TransformationAnimation {
     public static final ProtocolManager PROTOCOL = ProtocolLibrary.getProtocolManager();
 
     static {
-        PROTOCOL.addPacketListener(new OffsetPacketListener());
+        PROTOCOL.addPacketListener(ProtocolUtils.ENTITY_POSITION_SYNC != null ? new OffsetPacketListener() : new OldOffsetPacketListener());
         PROTOCOL.addPacketListener(new MovementPacketListener());
     }
 
@@ -155,17 +156,36 @@ public class PacketTransformationAnimation extends TransformationAnimation {
 
     public static class OffsetPacketListener extends PacketAdapter {
         public OffsetPacketListener() {
+            super(Elevator.INSTANCE, ProtocolUtils.ENTITY_POSITION_SYNC);
+        }
+
+        @Override
+        public void onPacketSending(PacketEvent event) {
+            Entity entity = event.getPacket().getEntityModifier(event.getPlayer().getWorld()).read(0);
+            Double offset = packetOffsets.get(entity);
+            if (offset == null)
+                return;
+            PacketContainer packet = event.getPacket().deepClone();
+            InternalStructure internalStructure = packet.getStructures().read(0);
+            Vector origPos = internalStructure.getVectors().read(0);
+            Vector newPos = origPos.clone().setY(origPos.getY() + offset);
+            internalStructure.getVectors().write(0, newPos);
+            event.setPacket(packet);
+        }
+    }
+
+    public static class OldOffsetPacketListener extends PacketAdapter {
+        public OldOffsetPacketListener() {
             super(Elevator.INSTANCE, PacketType.Play.Server.ENTITY_TELEPORT);
         }
 
         @Override
         public void onPacketSending(PacketEvent event) {
-            PacketContainer packet = event.getPacket().deepClone();
-            Entity entity = packet.getEntityModifier(event.getPlayer().getWorld()).read(0);
+            Entity entity = event.getPacket().getEntityModifier(event.getPlayer().getWorld()).read(0);
             Double offset = packetOffsets.get(entity);
             if (offset == null)
                 return;
-
+            PacketContainer packet = event.getPacket().deepClone();
             Double original = packet.getDoubles().read(1);
             packet.getDoubles().write(1, original + offset);
             event.setPacket(packet);
@@ -174,8 +194,10 @@ public class PacketTransformationAnimation extends TransformationAnimation {
 
     public static class MovementPacketListener extends PacketAdapter {
         public MovementPacketListener() {
+
             super(Elevator.INSTANCE,
-                    PacketType.Play.Server.ENTITY_TELEPORT, PacketType.Play.Server.REL_ENTITY_MOVE, PacketType.Play.Server.REL_ENTITY_MOVE_LOOK
+                    ProtocolUtils.ENTITY_POSITION_SYNC != null ? ProtocolUtils.ENTITY_POSITION_SYNC : PacketType.Play.Server.ENTITY_TELEPORT,
+                    PacketType.Play.Server.REL_ENTITY_MOVE, PacketType.Play.Server.REL_ENTITY_MOVE_LOOK
 //                    , PacketType.Play.Server.ENTITY_METADATA
             );
         }
