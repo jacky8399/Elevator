@@ -40,21 +40,56 @@ public class ProtocolUtils {
     public static final WrappedDataWatcherObject ROTATION_LEFT = dataWatcher(13, Quaternionf.class);
     public static final WrappedDataWatcherObject ROTATION_RIGHT = dataWatcher(14, Quaternionf.class);
 
+    private static final PacketType ENTITY_POSITION_SYNC;
+    static {
+        PacketType entityPositionSync = null;
+        try {
+            entityPositionSync = PacketType.findCurrent(PacketType.Protocol.PLAY, PacketType.Sender.SERVER, 0x1F);
+        } catch (Exception ignored) {}
+        ENTITY_POSITION_SYNC = entityPositionSync;
+    }
+
     public static PacketContainer setLocation(Entity entity, Location location) {
-        PacketContainer packet = new PacketContainer(PacketType.Play.Server.ENTITY_TELEPORT);
-        packet.getEntityModifier(entity.getWorld()).write(0, entity);
-        if (packet.getVectors().size() != 0) {
+        PacketContainer packet;
+        if (ENTITY_POSITION_SYNC != null) {
+            /* >=1.21.3:
+                type ClientboundEntityPositionSyncPacket {
+                    int entityId;
+                    type {
+                        Vector position, velocity;
+                        float yaw, pitch;
+                    } values;
+                    boolean onGround;
+                }
+            */
+            packet = new PacketContainer(ENTITY_POSITION_SYNC);
             // https://github.com/dmulloy2/ProtocolLib/issues/3341
-            packet.getVectors()
+            var internalStructure = packet.getStructures().read(0);
+            internalStructure.getVectors()
                     .write(0, location.toVector());
+            internalStructure.getFloat()
+                    .write(0, location.getYaw())
+                    .write(1, location.getPitch());
         } else {
-            packet.getDoubles() // XYZ
+            /* <1.21.3:
+                type ClientboundTeleportEntityPacket {
+                    int entityId;
+                    double x, y, z;
+                    byte yaw, pitch;
+                    boolean onGround;
+                }
+             */
+            packet = new PacketContainer(PacketType.Play.Server.ENTITY_TELEPORT);
+            packet.getDoubles()
                     .write(0, location.getX())
                     .write(1, location.getY())
                     .write(2, location.getZ());
+            packet.getBytes()
+                    .write(0, (byte)((int)(location.getYaw() * 256.0F / 360.0F)))
+                    .write(1, (byte)((int)(location.getPitch() * 256.0F / 360.0F)));
         }
-        packet.getBytes().write(0, (byte) 0).write(1, (byte) 0);
         packet.getBooleans().write(0, false); // on ground
+        packet.getEntityModifier(entity.getWorld()).write(0, entity);
         return packet;
     }
     public static PacketContainer setRelativeLocation(Entity entity, Vector delta) {

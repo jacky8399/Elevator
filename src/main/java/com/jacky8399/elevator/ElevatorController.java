@@ -1,6 +1,7 @@
 package com.jacky8399.elevator;
 
 import com.jacky8399.elevator.animation.ElevatorAnimation;
+import com.jacky8399.elevator.animation.PacketTransformationAnimation;
 import com.jacky8399.elevator.animation.TransformationAnimation;
 import com.jacky8399.elevator.utils.*;
 import net.kyori.adventure.platform.bukkit.BukkitComponentSerializer;
@@ -748,7 +749,15 @@ public class ElevatorController {
         boolean debug = Config.debug;
         movementTime--;
 
-        animation.tick(this);
+        try {
+            animation.tick(this);
+        } catch (Exception ex) {
+            LOGGER.log(Level.SEVERE, "Failed to animate elevator at %d,%d,%d".formatted(controller.getX(), controller.getY(), controller.getZ()), ex);
+            if (animation instanceof PacketTransformationAnimation && !Config.debug) {
+                LOGGER.log(Level.SEVERE, "Falling back to Bukkit animation.");
+                Elevator.SCHEDULER = TransformationAnimation.FACTORY;
+            }
+        }
 
         Location temp = controller.getLocation();
 
